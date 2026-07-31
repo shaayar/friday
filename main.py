@@ -1,5 +1,9 @@
+"""
+main.py — Entry Point
+"""
+
 def main():
-    print("Hello from friday-tony-stark-demo!")
+    print("Hello from friday!")
 
 
 if __name__ == "__main__":

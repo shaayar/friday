@@ -8,21 +8,23 @@ running on the Windows host.
 MCP Server URL is auto-resolved from WSL → Windows host IP.
 
 Run:
-  uv run agent_friday.py dev      – LiveKit Cloud mode
-  uv run agent_friday.py console  – text-only console mode
+    uv run agent_friday.py dev      – LiveKit Cloud mode
+    uv run agent_friday.py console  – text-only console mode
 """
 
-import os
 import logging
+import os
 import subprocess
 
 from dotenv import load_dotenv
 from livekit.agents import JobContext, WorkerOptions, cli
-from livekit.agents.voice import Agent, AgentSession
 from livekit.agents.llm import mcp
+from livekit.agents.voice import Agent, AgentSession
 
 # Plugins
-from livekit.plugins import google as lk_google, openai as lk_openai, sarvam, silero
+from livekit.plugins import google as lk_google
+from livekit.plugins import openai as lk_openai
+from livekit.plugins import sarvam, silero
 
 # ---------------------------------------------------------------------------
 # CONFIG

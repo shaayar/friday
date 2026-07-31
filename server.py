@@ -6,7 +6,7 @@ Run with: python server.py
 from mcp.server.fastmcp import FastMCP
 from friday.tools import register_all_tools
 from friday.prompts import register_all_prompts
-from friday.resources import register_all_resources
+from friday.assets import register_all_resources
 from friday.config import config
 
 # Create the MCP server instance
