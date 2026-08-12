@@ -369,28 +369,40 @@ ToolResult
 
 ### Purpose
 
-Manage all persistent knowledge.
+Manage persistent memory and conversation history.
+
+The Memory Manager separates raw conversation history from durable memory and hides storage implementation details from higher-level components.
 
 ---
 
 ### Responsibilities
 
-- Store memories
-- Retrieve memories
-- Update memories
-- Select storage backend
+- Store conversations
+- Store messages
+- Retrieve conversation history
+- Retrieve recent messages
+- Store durable memories
+- Retrieve relevant memories
+- Update durable memories
+- Select and manage storage backends
+- Maintain the boundary between conversation history and durable memory
 
 ---
 
 ### Input
 
-Memory requests
+- Conversation requests
+- Memory requests
+- Context retrieval requests
 
 ---
 
 ### Output
 
-Memory / Context
+- Conversation
+- Message
+- Memory
+- Context
 
 ---
 
@@ -402,8 +414,19 @@ Examples:
 
 - SQLite
 - ChromaDB
+- Future storage backends
 
-Higher-level components remain unaware of implementation.
+Higher-level components remain unaware of storage implementation.
+
+---
+
+### Should NOT
+
+- Reason about the meaning of conversations
+- Decide what information should become durable memory
+- Build prompts
+- Call LLM providers directly
+- Expose storage implementation details
 
 ---
 
@@ -715,7 +738,7 @@ Output Layer
 | Scheduler | Task Manager |
 | Executor | Scheduler |
 | Tool Engine | Executor |
-| Memory Manager | Executor |
+| Memory Manager | Conversation, Message, Memory, Observation |
 | Context Pipeline | Memory Manager |
 | Prompt Builder | Context Pipeline |
 | AI Engine | Prompt Builder |

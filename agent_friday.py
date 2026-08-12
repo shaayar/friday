@@ -1,27 +1,31 @@
 """
-FRIDAY – Voice Agent (MCP-powered)
+FRIDAY - Voice Agent (MCP-powered)
 ===================================
 Iron Man-style voice assistant that controls RGB lighting, runs diagnostics,
 scans the network, and triggers dramatic boot sequences via an MCP server
 running on the Windows host.
 
-MCP Server URL is auto-resolved from WSL → Windows host IP.
+MCP Server URL is auto-resolved from WSL -> Windows host IP.
 
 Run:
-    uv run agent_friday.py dev      – LiveKit Cloud mode
-    uv run agent_friday.py console  – text-only console mode
+    uv run agent_friday.py dev      - LiveKit Cloud mode
+    uv run agent_friday.py console  - text-only console mode
 """
 
 import logging
 import subprocess
+import tempfile
+from pathlib import Path
 
 from dotenv import load_dotenv
 from livekit.agents import JobContext, WorkerOptions, cli
-from livekit.agents.llm import mcp
+from livekit.agents.llm import ChatMessage, mcp
 from livekit.agents.voice import Agent, AgentSession
 from friday.config import config
 from friday.ai.prompts import load_system_prompt
 from friday.ai.providers import build_llm, build_stt, build_tts
+from friday.memory.manager import MemoryManager
+from friday.memory.sqlite_store import SQLiteConversationStore
 
 # Plugins
 from livekit.plugins import silero
@@ -69,6 +73,7 @@ def _get_windows_host_ip() -> str:
 
     return "127.0.0.1"
 
+
 def _mcp_server_url() -> str:
     # host_ip = _get_windows_host_ip()
     # url = f"http://{host_ip}:{config.MCP_SERVER_PORT}/sse"
@@ -84,7 +89,7 @@ def _mcp_server_url() -> str:
 
 class FridayAgent(Agent):
     """
-    F.R.I.D.A.Y. – Iron Man-style voice assistant.
+    F.R.I.D.A.Y. - Iron Man-style voice assistant.
     All tools are provided via the MCP server on the Windows host.
     """
 
@@ -147,18 +152,69 @@ def _endpointing_delay() -> float:
 
 async def entrypoint(ctx: JobContext) -> None:
     logger.info(
-        "FRIDAY online – room: %s | STT=%s | LLM=%s | TTS=%s",
-        ctx.room.name, config.STT_PROVIDER, config.LLM_PROVIDER, config.TTS_PROVIDER,
+        "FRIDAY online – room: %s | STT=%s | LLM=%s | TTS=%s (%s / %s)",
+        ctx.room.name,
+        config.STT_PROVIDER,
+        config.LLM_PROVIDER,
+        config.TTS_PROVIDER,
+        config.SARVAM_TTS_MODEL,
+        config.SARVAM_TTS_VOICE,
     )
 
     stt = build_stt()
     llm = build_llm()
     tts = build_tts()
 
+    # Create temporary SQLite database for conversation persistence
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = Path(f.name)
+
+    store = SQLiteConversationStore(db_path)
+    memory = MemoryManager(store)
+    conversation = memory.create_conversation()
+
+    logger.info("Created conversation id=%s", conversation.id)
+
     session = AgentSession(
         turn_detection=_turn_detection(),
         min_endpointing_delay=_endpointing_delay(),
     )
+
+    # Store MemoryManager and conversation_id in session userdata for access in event handlers
+    session.userdata = {
+        "memory": memory,
+        "conversation_id": conversation.id,
+    }
+
+    # Persist committed conversation items (user/assistant messages) to SQLite
+    def _on_conversation_item_added(event) -> None:
+        item = event.item
+        if not isinstance(item, ChatMessage):
+            return
+
+        text = item.text_content
+        if not text or item.role not in ("user", "assistant"):
+            return
+
+        conv_id = session.userdata["conversation_id"]
+        mem = session.userdata["memory"]
+
+        if item.role == "user":
+            mem.save_message(conv_id, "user", text)
+            logger.debug("Persisted user message: %s...", text[:50])
+        elif item.role == "assistant":
+            mem.save_message(conv_id, "assistant", text)
+            logger.debug("Persisted assistant message: %s...", text[:50])
+
+    session.on("conversation_item_added", _on_conversation_item_added)
+
+    # Register shutdown callback to close store AFTER session fully stops
+    async def _cleanup(reason: str = "") -> None:
+        store.close()
+        db_path.unlink(missing_ok=True)
+        logger.info("Closed conversation id=%s (reason: %s)", conversation.id, reason or "shutdown")
+
+    ctx.add_shutdown_callback(_cleanup)
 
     await session.start(
         agent=FridayAgent(stt=stt, llm=llm, tts=tts),
@@ -173,6 +229,7 @@ async def entrypoint(ctx: JobContext) -> None:
 def main():
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 
+
 def dev():
     """Wrapper to run the agent in dev mode automatically."""
     import sys
@@ -180,6 +237,7 @@ def dev():
     if len(sys.argv) == 1:
         sys.argv.append("dev")
     main()
+
 
 if __name__ == "__main__":
     main()

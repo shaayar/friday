@@ -8,8 +8,12 @@ dependencies = [
     "dotenv>=0.9.9",
     "fastmcp",
     "httpx",
-    "livekit-agents[deepgram,groq,openai,sarvam,silero]>=1.5.1",
+    "livekit-agents[deepgram,groq,openai,sarvam,silero]~=1.6",
     "livekit-plugins-google>=1.5.1",
+    "livekit-plugins-groq~=1.6",
+    "livekit-plugins-openai~=1.6",
+    "livekit-plugins-sarvam~=1.6",
+    "livekit-plugins-silero~=1.6",
     "python-dotenv",
 ]
 

@@ -78,24 +78,30 @@ Having a single execution path provides:
         ▼                            ▼                          ▼
     MCP Tools                  Memory Manager              AI Engine
                                      │                          │
-                                     │                          ▼
-                                     │                 Context Pipeline
+                          ┌──────────┴──────────┐               │
+                          │                     │               │
+                          ▼                     ▼               ▼
+                 Conversation History    Durable Memory   Context Pipeline
+                          │                     │               │
+                          └──────────┬──────────┘               │
                                      │                          │
-                                     │                          ▼
-                                     │                  Prompt Builder
-                                     │                          │
-                                     │                          ▼
-                                     │                   LLM Provider
-                                     │
-                                     └──────────────┬──────────────┘
+                                     └──────────────┬───────────┘
+                                                    ▼
+                                           Context Pipeline
                                                     │
                                                     ▼
-                                              Observation
+                                            Prompt Builder
+                                                    │
+                                                    ▼
+                                             LLM Provider
+                                                    │
+                                                    ▼
+                                               Observation
                                                     │
                           ┌─────────────────────────┴─────────────────────────┐
                           │                                                   │
                           ▼                                                   ▼
-                    Session State                                    Long-term Memory
+                    Session State                                    Memory Update
                           │                                                   │
                           └─────────────────────────┬─────────────────────────┘
                                                     │
@@ -259,24 +265,55 @@ Possible execution targets:
 
 ## Stage 8 — Memory Manager
 
-Manage all persistent information.
+### Purpose
 
-Responsibilities include:
+Manage conversation history and persistent memory.
 
-- retrieving memories
-- storing memories
-- updating memories
-- selecting storage backend
+The Memory Manager separates raw conversation history from durable memory and hides storage implementation details from the rest of the system.
 
-The Memory Manager hides implementation details from the rest of the system.
+---
 
-Future storage backends may include:
+### Responsibilities
+
+- Create conversations
+- Store messages
+- Retrieve conversation history
+- Retrieve recent messages
+- Store durable memories
+- Retrieve memories
+- Update durable memories
+- Select storage backend
+
+---
+
+### Input
+
+- Conversation requests
+- Memory requests
+- Context retrieval requests
+
+---
+
+### Output
+
+- Conversation
+- Message
+- Memory
+- Context
+
+---
+
+### Storage
+
+Abstract.
+
+Possible implementations include:
 
 - SQLite
 - ChromaDB
-- others
+- Future storage backends
 
-Higher-level modules should never communicate with databases directly.
+Higher-level modules must never communicate with databases directly.
 
 ---
 
@@ -379,9 +416,26 @@ Destroyed when the session ends.
 
 ---
 
-### Long-term Memory
+### Conversation History
 
-Persistent knowledge.
+Persistent record of interactions.
+
+Examples:
+
+- conversations
+- messages
+- tool interactions
+- relevant observations
+
+Conversation History records what happened.
+
+It is not automatically considered durable Memory.
+
+---
+
+### Durable Memory
+
+Persistent information retained because it is useful beyond the immediate conversation.
 
 Examples:
 
@@ -390,9 +444,13 @@ Examples:
 - research
 - user profile
 - decisions
-- conversation history
+- facts
 
-Persists across sessions.
+Durable Memory may eventually be produced through Memory Distillation.
+
+---
+
+Both Conversation History and Durable Memory persist across sessions, but they serve different purposes.
 
 ---
 

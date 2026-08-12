@@ -43,15 +43,13 @@ def build_llm():
 
 def build_tts():
     if config.TTS_PROVIDER == "sarvam":
-        logger.info("TTS → Sarvam Bulbul v3")
+        logger.info("TTS → Sarvam (%s / %s)", config.SARVAM_TTS_MODEL, config.SARVAM_TTS_VOICE)
         return sarvam.TTS(
             target_language_code=config.SARVAM_TTS_LANGUAGE,
-            model="bulbul:v3",
-            speaker=config.SARVAM_TTS_SPEAKER,
+            model=config.SARVAM_TTS_MODEL,
+            speaker=config.SARVAM_TTS_VOICE,
             pace=config.TTS_SPEED,
+            api_key=os.getenv("SARVAM_API_KEY"),
         )
-    elif config.TTS_PROVIDER == "openai":
-        logger.info("TTS → OpenAI TTS (%s / %s)", config.OPENAI_TTS_MODEL, config.OPENAI_TTS_VOICE)
-        return lk_openai.TTS(model=config.OPENAI_TTS_MODEL, voice=config.OPENAI_TTS_VOICE, speed=config.TTS_SPEED)
     else:
         raise ValueError(f"Unknown TTS_PROVIDER: {config.TTS_PROVIDER!r}")

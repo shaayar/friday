@@ -345,13 +345,85 @@ Most subsystems
 
 ---
 
-## 7. Memory
+## 7. Conversation
 
 ### Purpose
 
-Represents persistent knowledge.
+Represents a persistent conversational thread.
 
-Independent of storage implementation.
+A Conversation contains an ordered collection of Messages.
+
+---
+
+### Produced By
+
+- Session Manager
+- Conversation Manager
+
+---
+
+### Consumed By
+
+- Memory Manager
+- Context Pipeline
+
+---
+
+### Fields
+
+| Field | Description |
+|--------|-------------|
+| id | Unique conversation identifier |
+| created_at | Time the conversation was created |
+| updated_at | Time the conversation was last updated |
+
+---
+
+## 8. Message
+
+### Purpose
+
+Represents a single message within a Conversation.
+
+A Message is part of conversation history and is not automatically considered durable Memory.
+
+---
+
+### Produced By
+
+- User Interface
+- AI Engine
+- Conversation Manager
+
+---
+
+### Consumed By
+
+- Conversation Manager
+- Memory Manager
+- Context Pipeline
+
+---
+
+### Fields
+
+| Field | Description |
+|--------|-------------|
+| id | Unique message identifier |
+| conversation_id | Identifier of the parent Conversation |
+| role | User, assistant, system, or tool |
+| content | Message content |
+| created_at | Time the message was created |
+
+---
+
+## 9. Memory
+
+### Purpose
+
+Represents durable information retained by the system beyond the immediate conversation or session.
+
+Memory is not the same as Conversation History. Conversation History records what was said; Memory represents information that the system has determined is worth retaining for future use.
 
 ---
 
@@ -372,7 +444,7 @@ Context Pipeline
 | Field | Description |
 |--------|-------------|
 | id | Memory identifier |
-| type | Conversation, Preference, Project, Knowledge |
+| type | Preference, Project, Knowledge |
 | content | Stored information |
 | source | Origin of memory |
 | importance | Retention score |
@@ -393,7 +465,7 @@ Storage is an implementation detail.
 
 ---
 
-## 8. Context
+## 10. Context
 
 ### Purpose
 
@@ -432,7 +504,7 @@ Prompt Builder
 
 ---
 
-## 9. Prompt
+## 11. Prompt
 
 ### Purpose
 
@@ -464,7 +536,7 @@ AI Provider
 
 ---
 
-## 10. Response
+## 12. Response
 
 ### Purpose
 
@@ -498,7 +570,7 @@ Output Interface
 
 ---
 
-## 11. ToolResult
+## 13. ToolResult
 
 ### Purpose
 
@@ -534,7 +606,7 @@ Observation
 
 ---
 
-## 12. Event
+## 14. Event
 
 ### Purpose
 
@@ -590,41 +662,32 @@ Every subsystem
 ## Relationships
 
 ```text
-Request
+Conversation
     │
-    ▼
-Intent
-    │
-    ▼
-ExecutionPlan
-    │
-    ▼
-Task
-    │
-    ▼
-Observation
-    │
-    ▼
-Response
-
-
-Memory
-    │
-    ▼
-Context
-    │
-    ▼
-Prompt
-    │
-    ▼
-AI Engine
-
-
-Every significant action
-
-↓
-
-Event
+    ├── Message
+    ├── Message
+    └── Message
+          │
+          ▼
+   Memory Distillation
+          │
+          ▼
+       Memory
+          │
+          ▼
+       Context
+          │
+          ▼
+       Prompt
+          │
+          ▼
+      AI Engine
+          │
+          ▼
+    Every significant action
+          │
+          ▼
+        Event
 ```
 
 ---

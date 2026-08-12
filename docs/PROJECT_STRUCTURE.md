@@ -39,13 +39,15 @@ Must never contain:
 
 ## friday/memory/
 
-Persistent knowledge management.
+Persistent memory and conversation history.
 
 Responsible for:
 
-- Retrieval
-- Storage
+- Conversation history
+- Memory retrieval
+- Memory storage
 - Memory lifecycle
+- Future memory distillation
 
 ---
 
