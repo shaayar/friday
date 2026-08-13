@@ -539,6 +539,164 @@ See:
 
 ---
 
+## ADR-021 — Unify Project Registry with Filesystem Root Registry
+
+**Status**
+
+Accepted
+
+**Date**
+
+2026-08-13
+
+---
+
+### Context
+
+The Project Workspace subsystem needs persistent project identity
+(name, root) while the filesystem subsystem already persists
+authorization grants for external roots. Two separate stores could
+drift: a project could be "known" but not "authorized", or vice versa.
+
+---
+
+### Decision
+
+Unify `ProjectRootRegistry` into a single project registry. A
+registered project IS an authorized root. The registry stays in
+`friday/filesystem/` as the security boundary consumed by `PathPolicy`,
+and also serves as the source of project identity for the projects
+layer. Storage path remains `~/.friday/project_roots.json` with
+backward-compatible loading.
+
+---
+
+### Alternatives Considered
+
+Separate project registry referencing grant IDs: cleaner separation of
+security vs semantics, but introduces two sources of truth that must
+stay in sync.
+
+---
+
+### Consequences
+
+Benefits:
+
+- Single source of truth, no drift
+- Satisfies "do not duplicate the existing filesystem root registry"
+- Rename/revoke cannot desynchronize authorization and identity
+
+Drawbacks:
+
+- Filesystem subsystem now carries the project identity concept
+
+---
+
+## ADR-022 — Project Workspace Content Format
+
+**Status**
+
+Accepted
+
+**Date**
+
+2026-08-13
+
+---
+
+### Context
+
+The private FRIDAY project workspace stores assistant-maintained
+context, facts, decisions, changelog, and state. The storage format
+affects inspectability, diffs, rebuildability, and future querying.
+
+---
+
+### Decision
+
+Use plain Markdown files for prose (`context.md`, `facts.md`,
+`decisions.md`, `changelog.md`) and JSON for machine-readable state
+(`state.json`). Migrate to SQLite later when retrieval/querying becomes
+a real requirement. Do not use binary or custom encodings without a
+demonstrated benefit.
+
+---
+
+### Alternatives Considered
+
+SQLite now: premature schema and less human-inspectable; conflicts with
+the "do not over-engineer the formats yet" guidance.
+
+---
+
+### Consequences
+
+Benefits:
+
+- Human-inspectable, diffable, rebuildable
+- Zero schema in the first implementation
+- Derived knowledge can be reconstructed if lost
+
+Drawbacks:
+
+- No querying until migration to a structured store
+
+---
+
+## ADR-023 — Active Project Precedence
+
+**Status**
+
+Accepted
+
+**Date**
+
+2026-08-13
+
+---
+
+### Context
+
+Both explicit activation and CWD detection can produce an active
+project. Without a precedence rule, CWD changes would silently override
+an explicit user choice, and the two mechanisms would conflict.
+
+---
+
+### Decision
+
+Explicit activation has the highest priority. CWD detection never
+overrides an explicit pointer. With no explicit pointer, CWD detection
+drives the active project: inside a registered root it becomes active
+with `source="detected"`; leaving all roots clears it. `clear()` clears
+the explicit pointer then immediately falls back to CWD detection.
+Unregistering an explicitly active project invalidates the pointer and
+falls back to detection.
+
+---
+
+### Alternatives Considered
+
+CWD detection always wins: simple but makes explicit activation
+meaningless. Session-only active state: no persistence across restarts.
+
+---
+
+### Consequences
+
+Benefits:
+
+- Predictable, deterministic transitions
+- Explicit user intent survives CWD changes
+- Persists across restarts
+
+Drawbacks:
+
+- Requires source tracking (`explicit` vs `detected`) on the pointer
+
+---
+
 ## Future Decisions
 
 Reserved IDs:

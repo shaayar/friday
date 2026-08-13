@@ -71,6 +71,43 @@ Providers
 
 Explain why each exists.
 
+**Interface Separation**
+
+The assistant core is independent from any specific user interface.
+
+Conceptually:
+
+```
+Assistant Core
+├── Memory
+├── Tools
+├── Files
+├── Projects
+├── Planning
+└── Persona
+```
+
+Interfaces:
+
+```
+LiveKit Voice
+CLI
+Web UI
+```
+
+Architectural rule:
+
+- `agent_friday.py` is a voice/interface adapter, not the assistant core.
+- The system must be designed so additional interfaces can interact with the same core capabilities without duplicating business logic.
+
+**Web Interface (planned)**
+
+A Web UI is planned as a future interface.
+
+It is intentionally deferred until the assistant core, memory, tools, and filesystem capabilities are stable.
+
+UI implementation, framework, and design are intentionally not specified.
+
 ---
 
 ### 6. Core Subsystems
@@ -145,6 +182,41 @@ Do NOT discuss Chroma internals.
 
 Only architectural decisions.
 
+**Project Workspace (planned)**
+
+The planned concept of an internal project workspace stores assistant-maintained project context, decisions, facts, state, and history needed to work effectively on a project.
+
+```
+~/.friday/projects/<project-id>/
+├── context
+├── facts
+├── decisions
+├── changelog
+└── state
+```
+
+These files are internal assistant state and are not intended to be treated as normal user-facing documents.
+
+**Memory Distillation**
+
+Architectural memory distinguishes raw conversation history from durable memory:
+
+```
+Conversation
+    ↓
+Memory Extraction
+    ↓
+Facts / Preferences / Decisions / Tasks
+    ↓
+Long-term Memory
+```
+
+Project-related information should be distinguishable from general long-term user memory.
+
+Project information should eventually feed the project workspace/context layer rather than storing every raw conversation indefinitely.
+
+This is architectural direction only. The extraction algorithm, LLM model, and database schema are intentionally not defined.
+
 ---
 
 ### 10. AI Architecture
@@ -171,6 +243,23 @@ Why tools exist.
 Responsibilities.
 
 Future plugin system.
+
+**Filesystem Capability (planned)**
+
+Filesystem access will be exposed through controlled tools rather than unrestricted operating-system access.
+
+Planned capabilities:
+
+- read_file
+- write_file
+- list_directory
+- create_directory
+- move_file
+- copy_file
+- delete_file
+- search_files
+
+The assistant must not receive unrestricted filesystem access. Filesystem operations must pass through an explicit capability/policy boundary.
 
 ---
 
@@ -210,9 +299,33 @@ Not tightly coupled to Gemini.
 
 Not cloud dependent.
 
+The following are planned/deferred capabilities, not current implementation goals:
+
+- Web UI implementation
+- final assistant naming
+- unrestricted filesystem access
+- memory distillation implementation
+- project workspace implementation
+
 ---
 
-### 15. Referenced Documents
+### 15. Current Development Priority
+
+Current priority is stabilizing the assistant core and its capabilities before building presentation layers.
+
+Recommended progression:
+
+Core runtime
+→ Filesystem tools
+→ Project workspace
+→ Memory distillation
+→ Expanded tool/action capabilities
+→ Web interface
+→ Final assistant identity
+
+---
+
+### 16. Referenced Documents
 
 [REQUEST_LIFECYCLE.md](./REQUEST_LIFECYCLE.md)
 
@@ -265,3 +378,15 @@ The system should always be explainable and debuggable.
 ### Evolvability
 
 Architecture should support adding new capabilities without modifying unrelated subsystems.
+
+---
+
+### Identity Independence
+
+The assistant's final name and identity are intentionally undecided.
+
+The implementation must not hard-code the eventual public identity into architectural assumptions.
+
+The assistant name should eventually be configuration/persona data rather than something that affects core architecture.
+
+Naming is DEFERRED.

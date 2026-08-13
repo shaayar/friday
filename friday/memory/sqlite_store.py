@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
+from friday.config import config
+
+
 def _default_database_path() -> Path:
-    return Path.home() / ".friday" / "data" / "conversations.db"
+    return config.FRIDAY_HOME / "data" / "conversations.db"
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +44,7 @@ class SQLiteConversationStore:
     def close(self) -> None:
         self._conn.close()
 
-    def __enter__(self) -> "SQLiteConversationStore":
+    def __enter__(self) -> SQLiteConversationStore:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -161,4 +164,4 @@ class SQLiteConversationStore:
 
     @staticmethod
     def _utc_now() -> str:
-        return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        return datetime.now(UTC).isoformat(timespec="microseconds")

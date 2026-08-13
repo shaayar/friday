@@ -2,6 +2,9 @@
 Configuration — Application configuration and environment management.
 """
 
+from pathlib import Path
+
+
 class _Config:
     STT_PROVIDER       = "sarvam"
     LLM_PROVIDER       = "groq"
@@ -21,5 +24,15 @@ class _Config:
     MCP_SERVER_PORT = 8000
     
     SERVER_NAME = "Friday MCP Server"
+
+    # FRIDAY workspace root — internally trusted by the filesystem policy
+    FRIDAY_HOME = Path.home() / ".friday"
+
+    # Filesystem capability limits (bytes / entries / results / depth)
+    FILESYSTEM_READ_LIMIT_BYTES = 1_000_000
+    FILESYSTEM_WRITE_LIMIT_BYTES = 1_000_000
+    FILESYSTEM_LIST_LIMIT = 500
+    FILESYSTEM_SEARCH_MAX_RESULTS = 100
+    FILESYSTEM_SEARCH_MAX_DEPTH = 5
 
 config = _Config()
