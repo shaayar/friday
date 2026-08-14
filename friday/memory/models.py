@@ -107,6 +107,7 @@ class Memory:
     valid_until: datetime | None = None
     supersedes: str | None = None
     superseded_by: str | None = None
+    project_id: str | None = None
 
     def __post_init__(self) -> None:
         memory_id = str(self.id).strip()
@@ -160,6 +161,15 @@ class Memory:
             raise ValueError("superseded_by cannot reference the same memory")
         object.__setattr__(self, "supersedes", supersedes)
         object.__setattr__(self, "superseded_by", superseded_by)
+
+        project_id = None if self.project_id is None else str(self.project_id).strip()
+        if project_id == "":
+            raise ValueError("project_id cannot be empty")
+        if self.scope is MemoryScope.PROJECT and not project_id:
+            raise ValueError("PROJECT-scoped memories require project_id")
+        if self.scope is not MemoryScope.PROJECT and project_id:
+            raise ValueError("Only PROJECT-scoped memories may have project_id")
+        object.__setattr__(self, "project_id", project_id)
 
 
 __all__ = [

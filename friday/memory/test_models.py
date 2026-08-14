@@ -30,7 +30,10 @@ from friday.memory.models import (
     ],
 )
 def test_valid_memory_types(memory_type: MemoryType, scope: MemoryScope) -> None:
-    memory = Memory(type=memory_type, scope=scope, content="A durable memory.")
+    kwargs = {"type": memory_type, "scope": scope, "content": "A durable memory."}
+    if scope is MemoryScope.PROJECT:
+        kwargs["project_id"] = "test-project"
+    memory = Memory(**kwargs)
 
     assert memory.type is memory_type
     assert memory.scope is scope
@@ -71,6 +74,7 @@ def test_confidence_representation(confidence: MemoryConfidence) -> None:
         scope=MemoryScope.PROJECT,
         content="Confidence test",
         confidence=confidence,
+        project_id="test-project",
     )
 
     assert memory.confidence is confidence
@@ -99,12 +103,14 @@ def test_supersession_representation() -> None:
         type=MemoryType.PROJECT_DECISION,
         scope=MemoryScope.PROJECT,
         content="Use Sarvam TTS.",
+        project_id="test-project",
     )
     new_memory = Memory(
         type=MemoryType.PROJECT_DECISION,
         scope=MemoryScope.PROJECT,
         content="Use Sarvam TTS with WAV output.",
         supersedes=old_memory.id,
+        project_id="test-project",
     )
     superseded_old = replace(old_memory, superseded_by=new_memory.id, status=MemoryStatus.SUPERSEDED)
 
@@ -147,3 +153,38 @@ def test_memory_is_immutable() -> None:
 
     with pytest.raises(FrozenInstanceError):
         memory.content = "Changed"  # type: ignore[misc]
+
+
+def test_project_scope_requires_project_id() -> None:
+    with pytest.raises(ValueError, match="PROJECT-scoped memories require project_id"):
+        Memory(type=MemoryType.PROJECT_FACT, scope=MemoryScope.PROJECT, content="Project fact")
+
+
+def test_non_project_scope_rejects_project_id() -> None:
+    with pytest.raises(ValueError, match="Only PROJECT-scoped memories may have project_id"):
+        Memory(
+            type=MemoryType.USER_FACT,
+            scope=MemoryScope.USER,
+            content="User fact",
+            project_id="project-123",
+        )
+
+
+def test_empty_project_id_rejected() -> None:
+    with pytest.raises(ValueError, match="project_id cannot be empty"):
+        Memory(
+            type=MemoryType.PROJECT_FACT,
+            scope=MemoryScope.PROJECT,
+            content="Project fact",
+            project_id="   ",
+        )
+
+
+def test_valid_project_memory_with_project_id() -> None:
+    memory = Memory(
+        type=MemoryType.PROJECT_FACT,
+        scope=MemoryScope.PROJECT,
+        content="Project fact",
+        project_id="project-123",
+    )
+    assert memory.project_id == "project-123"
