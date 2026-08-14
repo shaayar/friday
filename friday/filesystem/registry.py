@@ -1,10 +1,12 @@
 """
-Project-root registry — explicit, persistent grants for external roots.
+Project registry — explicit, persistent project identity + authorization.
 
-External project directories are never accessible implicitly. A root must
-be registered by the host before the filesystem capability may touch it.
-The assistant cannot register or revoke grants through MCP tools; the
-registry only persists grants that the host authorizes.
+A registered project is both the durable project identity and an
+explicit authorization grant for its external root. External project
+directories are never accessible implicitly; a project must be
+registered by the host before the filesystem capability may touch its
+root. The assistant cannot register or revoke projects through MCP
+tools; the registry only persists grants that the host authorizes.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from friday.filesystem.exceptions import (
     RegistryCorruptError,
     RootNotFoundError,
 )
-from friday.filesystem.models import READ_PERMISSION, WRITE_PERMISSION, Grant
+from friday.filesystem.models import READ_PERMISSION, WRITE_PERMISSION, Project
 
 _KNOWN_PERMISSIONS = frozenset({READ_PERMISSION, WRITE_PERMISSION})
 
@@ -34,23 +36,23 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="microseconds")
 
 
-class ProjectRootRegistry:
-    """Stores and persists grants for authorized external project roots."""
+class ProjectRegistry:
+    """Stores and persists registered projects and their authorized roots."""
 
     def __init__(self, storage_path: str | Path | None = None) -> None:
         self._storage_path = Path(storage_path) if storage_path is not None else default_storage_path()
-        self._grants: dict[str, Grant] = {}
+        self._projects: dict[str, Project] = {}
         self._load()
 
     def register(
         self,
         root: str | Path,
         *,
-        label: str | None = None,
+        name: str | None = None,
         permissions: tuple[str, ...] | None = None,
-        grant_id: str | None = None,
-    ) -> Grant:
-        """Register an existing directory as an authorized root."""
+        project_id: str | None = None,
+    ) -> Project:
+        """Register an existing directory as a project root."""
         try:
             resolved_root = Path(root).expanduser().resolve(strict=True)
         except OSError as exc:
@@ -65,37 +67,65 @@ class ProjectRootRegistry:
         if unknown:
             raise ValueError(f"Unknown permissions: {sorted(unknown)}")
 
-        gid = grant_id if grant_id is not None else uuid.uuid4().hex[:12]
-        grant = Grant(
-            id=gid,
+        pid = project_id if project_id is not None else uuid.uuid4().hex[:12]
+        project = Project(
+            id=pid,
             root=resolved_root,
-            label=label or str(resolved_root),
+            name=name or str(resolved_root),
             permissions=frozenset(grant_permissions),
             created_at=_utc_now(),
         )
-        self._grants[gid] = grant
+        self._projects[pid] = project
         self._save()
-        return grant
+        return project
 
-    def revoke(self, grant_id: str) -> None:
-        """Revoke a previously registered grant."""
-        if grant_id not in self._grants:
-            raise GrantNotFoundError(f"No grant with id {grant_id!r}")
-        del self._grants[grant_id]
+    def revoke(self, project_id: str) -> None:
+        """Revoke a previously registered project."""
+        if project_id not in self._projects:
+            raise GrantNotFoundError(f"No project with id {project_id!r}")
+        del self._projects[project_id]
         self._save()
 
-    def get(self, grant_id: str) -> Grant | None:
-        return self._grants.get(grant_id)
+    def rename(self, project_id: str, new_name: str) -> Project:
+        """Change a project's display name without touching its identity
+        or stored workspace."""
+        project = self._projects.get(project_id)
+        if project is None:
+            raise GrantNotFoundError(f"No project with id {project_id!r}")
+        renamed = Project(
+            id=project.id,
+            root=project.root,
+            name=new_name,
+            permissions=project.permissions,
+            created_at=project.created_at,
+        )
+        self._projects[project_id] = renamed
+        self._save()
+        return renamed
 
-    def list_grants(self) -> list[Grant]:
-        return list(self._grants.values())
+    def get(self, project_id: str) -> Project | None:
+        return self._projects.get(project_id)
 
-    def grant_containing(self, resolved_path: Path) -> Grant | None:
-        """Return the first grant whose resolved root contains `resolved_path`."""
-        for grant in self._grants.values():
-            if resolved_path.is_relative_to(grant.root):
-                return grant
-        return None
+    def contains(self, project_id: str) -> bool:
+        return project_id in self._projects
+
+    def list_projects(self) -> list[Project]:
+        return list(self._projects.values())
+
+    def project_containing(self, resolved_path: Path) -> Project | None:
+        """Return the project whose root most specifically contains `resolved_path`.
+
+        When multiple registered roots contain the path, the longest
+        (most specific) root wins. This makes nested or overlapping
+        project registrations resolve to the deepest match.
+        """
+        best: Project | None = None
+        for project in self._projects.values():
+            if not resolved_path.is_relative_to(project.root):
+                continue
+            if best is None or len(project.root.parts) > len(best.root.parts):
+                best = project
+        return best
 
     def _load(self) -> None:
         if not self._storage_path.exists():
@@ -105,28 +135,31 @@ class ProjectRootRegistry:
         except (OSError, json.JSONDecodeError) as exc:
             raise RegistryCorruptError(f"Cannot read registry file {self._storage_path}: {exc}") from exc
 
-        for raw in payload.get("grants", {}).values():
-            grant = Grant(
+        # Accept both the current ("projects") and legacy ("grants") payload keys.
+        entries = payload.get("projects") or payload.get("grants") or {}
+        for raw in entries.values():
+            # Accept both the current ("name") and legacy ("label") display fields.
+            project = Project(
                 id=raw["id"],
                 root=Path(raw["root"]),
-                label=raw["label"],
+                name=raw.get("name") or raw.get("label") or Path(raw["root"]),
                 permissions=frozenset(raw["permissions"]),
                 created_at=raw["created_at"],
             )
-            self._grants[grant.id] = grant
+            self._projects[project.id] = project
 
     def _save(self) -> None:
         self._storage_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "grants": {
-                grant.id: {
-                    "id": grant.id,
-                    "root": str(grant.root),
-                    "label": grant.label,
-                    "permissions": sorted(grant.permissions),
-                    "created_at": grant.created_at,
+            "projects": {
+                project.id: {
+                    "id": project.id,
+                    "root": str(project.root),
+                    "name": project.name,
+                    "permissions": sorted(project.permissions),
+                    "created_at": project.created_at,
                 }
-                for grant in self._grants.values()
+                for project in self._projects.values()
             }
         }
         tmp = self._storage_path.with_name(self._storage_path.name + ".tmp")

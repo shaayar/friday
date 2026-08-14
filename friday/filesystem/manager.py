@@ -23,6 +23,7 @@ from friday.filesystem.exceptions import (
 from friday.filesystem.models import (
     READ_PERMISSION,
     WRITE_PERMISSION,
+    CreateDirectoryResult,
     DirectoryListing,
     FileEntry,
     ReadResult,
@@ -112,6 +113,26 @@ class FileSystemManager:
 
         target.write_bytes(data)
         return WriteResult(path=target, bytes_written=len(data), existed=existed)
+
+    def create_directory(self, path: str | Path, *, parents: bool = False) -> CreateDirectoryResult:
+        """Create a directory inside an authorized root.
+
+        Requires write permission on the matched root. Like ``write_file``,
+        the parent must already exist unless ``parents`` is True. Never
+        overwrites an existing directory.
+        """
+        access = self._policy.authorize(path, WRITE_PERMISSION)
+        target = access.path
+
+        if target.exists():
+            if target.is_dir():
+                raise AlreadyExistsError(f"Directory already exists: {target}")
+            raise NotDirectoryError(f"Path exists but is not a directory: {target}")
+        if not parents and not target.parent.is_dir():
+            raise NotDirectoryError(f"Parent directory does not exist: {target.parent}")
+
+        target.mkdir(parents=parents)
+        return CreateDirectoryResult(path=target)
 
     def list_directory(self, path: str | Path) -> DirectoryListing:
         """List entries inside an authorized directory."""

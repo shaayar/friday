@@ -16,10 +16,11 @@ from friday.filesystem.exceptions import (
     NotDirectoryError,
     PathDeniedError,
     PathNotFoundError,
+    PermissionDeniedError,
 )
 from friday.filesystem.manager import FileSystemManager
 from friday.filesystem.policy import PathPolicy
-from friday.filesystem.registry import ProjectRootRegistry
+from friday.filesystem.registry import ProjectRegistry
 
 
 @pytest.fixture
@@ -28,11 +29,13 @@ def env(tmp_path: Path) -> SimpleNamespace:
     workspace.mkdir()
     external = tmp_path / "external"
     external.mkdir()
-    registry = ProjectRootRegistry(tmp_path / "registry.json")
-    registry.register(external, label="external", permissions=("read", "write"))
+    registry = ProjectRegistry(tmp_path / "registry.json")
+    registry.register(external, name="external", permissions=("read", "write"))
     policy = PathPolicy(workspace_root=workspace, registry=registry)
     manager = FileSystemManager(policy)
-    return SimpleNamespace(workspace=workspace, external=external, policy=policy, manager=manager)
+    return SimpleNamespace(
+        workspace=workspace, external=external, registry=registry, policy=policy, manager=manager
+    )
 
 
 def test_read_file(env: SimpleNamespace) -> None:
@@ -106,6 +109,54 @@ def test_write_size_limit(env: SimpleNamespace) -> None:
     limited = FileSystemManager(env.policy, write_limit_bytes=10)
     with pytest.raises(LimitError):
         limited.write_file(env.workspace / "big.txt", "x" * 50)
+
+
+def test_create_directory(env: SimpleNamespace) -> None:
+    result = env.manager.create_directory(env.workspace / "newdir")
+
+    assert result.path == (env.workspace / "newdir").resolve()
+    assert (env.workspace / "newdir").is_dir()
+
+
+def test_create_directory_nested_without_parent_raises(env: SimpleNamespace) -> None:
+    with pytest.raises(NotDirectoryError):
+        env.manager.create_directory(env.workspace / "missing" / "deep")
+
+
+def test_create_directory_nested_with_parents(env: SimpleNamespace) -> None:
+    result = env.manager.create_directory(env.workspace / "a" / "b" / "c", parents=True)
+
+    assert result.path == (env.workspace / "a" / "b" / "c").resolve()
+    assert (env.workspace / "a" / "b" / "c").is_dir()
+
+
+def test_create_directory_existing_raises(env: SimpleNamespace) -> None:
+    target = env.workspace / "exists"
+    target.mkdir()
+    with pytest.raises(AlreadyExistsError):
+        env.manager.create_directory(target)
+
+
+def test_create_directory_on_file_raises(env: SimpleNamespace) -> None:
+    target = env.workspace / "file.txt"
+    target.write_text("x")
+    with pytest.raises(NotDirectoryError):
+        env.manager.create_directory(target)
+
+
+def test_create_directory_denied_outside_root(env: SimpleNamespace, tmp_path: Path) -> None:
+    with pytest.raises(PathDeniedError):
+        env.manager.create_directory(tmp_path / "newdir")
+
+
+def test_create_directory_requires_write_permission(
+    env: SimpleNamespace, tmp_path: Path
+) -> None:
+    read_only = tmp_path / "readonly"
+    read_only.mkdir()
+    env.registry.register(read_only, permissions=("read",))
+    with pytest.raises(PermissionDeniedError):
+        env.manager.create_directory(read_only / "sub")
 
 
 def test_list_directory(env: SimpleNamespace) -> None:

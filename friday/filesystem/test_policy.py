@@ -10,7 +10,7 @@ import pytest
 
 from friday.filesystem.exceptions import PathDeniedError, PermissionDeniedError
 from friday.filesystem.policy import PathPolicy
-from friday.filesystem.registry import ProjectRootRegistry
+from friday.filesystem.registry import ProjectRegistry
 
 
 @pytest.fixture
@@ -28,12 +28,12 @@ def external(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def registry(tmp_path: Path) -> ProjectRootRegistry:
-    return ProjectRootRegistry(tmp_path / "registry.json")
+def registry(tmp_path: Path) -> ProjectRegistry:
+    return ProjectRegistry(tmp_path / "registry.json")
 
 
 @pytest.fixture
-def policy(workspace: Path, registry: ProjectRootRegistry) -> PathPolicy:
+def policy(workspace: Path, registry: ProjectRegistry) -> PathPolicy:
     return PathPolicy(workspace_root=workspace, registry=registry)
 
 
@@ -44,7 +44,7 @@ def test_authorized_workspace_path(policy: PathPolicy, workspace: Path) -> None:
 
 
 def test_authorized_external_root(
-    policy: PathPolicy, registry: ProjectRootRegistry, external: Path
+    policy: PathPolicy, registry: ProjectRegistry, external: Path
 ) -> None:
     registry.register(external, permissions=("read", "write"))
     access = policy.authorize(external / "doc.txt", "read")
@@ -78,7 +78,7 @@ def test_symlink_escape_denied(policy: PathPolicy, workspace: Path, tmp_path: Pa
 
 
 def test_read_only_grant_rejects_write(
-    policy: PathPolicy, registry: ProjectRootRegistry, external: Path
+    policy: PathPolicy, registry: ProjectRegistry, external: Path
 ) -> None:
     registry.register(external, permissions=("read",))
     with pytest.raises(PermissionDeniedError):
@@ -86,7 +86,7 @@ def test_read_only_grant_rejects_write(
 
 
 def test_write_grant_allows_write(
-    policy: PathPolicy, registry: ProjectRootRegistry, external: Path
+    policy: PathPolicy, registry: ProjectRegistry, external: Path
 ) -> None:
     registry.register(external, permissions=("read", "write"))
     access = policy.authorize(external / "doc.txt", "write")

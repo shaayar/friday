@@ -15,7 +15,7 @@ from friday.filesystem.manager import (
     FileSystemManager,
 )
 from friday.filesystem.policy import PathPolicy
-from friday.filesystem.registry import ProjectRootRegistry
+from friday.filesystem.registry import ProjectRegistry
 
 __all__ = [
     "DEFAULT_LIST_LIMIT",
@@ -25,5 +25,5 @@ __all__ = [
     "DEFAULT_WRITE_LIMIT_BYTES",
     "FileSystemManager",
     "PathPolicy",
-    "ProjectRootRegistry",
+    "ProjectRegistry",
 ]

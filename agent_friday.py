@@ -14,7 +14,6 @@ Run:
 
 import logging
 import subprocess
-import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -165,11 +164,8 @@ async def entrypoint(ctx: JobContext) -> None:
     llm = build_llm()
     tts = build_tts()
 
-    # Create temporary SQLite database for conversation persistence
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = Path(f.name)
-
-    store = SQLiteConversationStore(db_path)
+    # Use durable default SQLite database for conversation persistence
+    store = SQLiteConversationStore()
     memory = MemoryManager(store)
     conversation = memory.create_conversation()
 
@@ -211,7 +207,6 @@ async def entrypoint(ctx: JobContext) -> None:
     # Register shutdown callback to close store AFTER session fully stops
     async def _cleanup(reason: str = "") -> None:
         store.close()
-        db_path.unlink(missing_ok=True)
         logger.info("Closed conversation id=%s (reason: %s)", conversation.id, reason or "shutdown")
 
     ctx.add_shutdown_callback(_cleanup)

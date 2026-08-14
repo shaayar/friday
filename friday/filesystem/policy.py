@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 from friday.filesystem.exceptions import PathDeniedError, PermissionDeniedError
 
 if TYPE_CHECKING:
-    from friday.filesystem.registry import ProjectRootRegistry
+    from friday.filesystem.registry import ProjectRegistry
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +51,7 @@ def resolve_path(path: str | Path) -> Path:
 class PathPolicy:
     """Resolves and authorizes paths against permitted roots."""
 
-    def __init__(self, workspace_root: str | Path, registry: ProjectRootRegistry) -> None:
+    def __init__(self, workspace_root: str | Path, registry: ProjectRegistry) -> None:
         self._workspace_root = resolve_path(workspace_root)
         self._registry = registry
 
@@ -66,7 +66,7 @@ class PathPolicy:
         if resolved.is_relative_to(self._workspace_root):
             return ResolvedAccess(path=resolved, root=self._workspace_root, permission=permission)
 
-        grant = self._registry.grant_containing(resolved)
+        grant = self._registry.project_containing(resolved)
         if grant is None:
             raise PathDeniedError(f"Path is not contained within any authorized root: {resolved}")
         if not grant.allows(permission):

@@ -8,21 +8,11 @@ All policy, authorization, and I/O logic lives in friday.filesystem.
 from friday.config import config
 from friday.filesystem.exceptions import FilesystemError
 from friday.filesystem.manager import FileSystemManager
-from friday.filesystem.policy import PathPolicy
-from friday.filesystem.registry import ProjectRootRegistry
+from friday.projects.service import build_filesystem_manager
 
 
 def _build_manager() -> FileSystemManager:
-    registry = ProjectRootRegistry(config.FRIDAY_HOME / "project_roots.json")
-    policy = PathPolicy(workspace_root=config.FRIDAY_HOME, registry=registry)
-    return FileSystemManager(
-        policy,
-        read_limit_bytes=config.FILESYSTEM_READ_LIMIT_BYTES,
-        write_limit_bytes=config.FILESYSTEM_WRITE_LIMIT_BYTES,
-        list_limit=config.FILESYSTEM_LIST_LIMIT,
-        search_max_results=config.FILESYSTEM_SEARCH_MAX_RESULTS,
-        search_max_depth=config.FILESYSTEM_SEARCH_MAX_DEPTH,
-    )
+    return build_filesystem_manager(config.FRIDAY_HOME)
 
 
 def _ok(data: dict) -> dict:

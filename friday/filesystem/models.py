@@ -16,12 +16,18 @@ WRITE_PERMISSION = "write"
 
 
 @dataclass(frozen=True, slots=True)
-class Grant:
-    """An explicit authorization for an external project root."""
+class Project:
+    """A registered project: an explicit authorization for an external
+    project root combined with its durable project identity.
+
+    ``id`` is the stable internal project ID, independent of the display
+    ``name``. The ID keys the private FRIDAY workspace
+    (``~/.friday/projects/<id>/``) so renaming never breaks stored state.
+    """
 
     id: str
     root: Path
-    label: str
+    name: str
     permissions: frozenset[str]
     created_at: str
 
@@ -64,6 +70,13 @@ class WriteResult:
     path: Path
     bytes_written: int
     existed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CreateDirectoryResult:
+    """Result of creating a directory."""
+
+    path: Path
 
 
 @dataclass(frozen=True, slots=True)
