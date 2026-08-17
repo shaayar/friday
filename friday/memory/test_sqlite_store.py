@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from friday.memory.sqlite_store import SQLiteConversationStore, Conversation, Message
+from friday.memory.sqlite_store import Conversation, Message, SQLiteConversationStore
 
 
 class TestSQLiteConversationStore:

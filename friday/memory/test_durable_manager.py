@@ -9,10 +9,16 @@ from pathlib import Path
 
 import pytest
 
+from friday.memory.candidates import (
+    MemoryCandidate,
+    Resolution,
+    ResolutionKind,
+)
 from friday.memory.durable_manager import DurableMemoryManager
 from friday.memory.exceptions import MemoryAlreadyExistsError, MemoryNotFoundError
 from friday.memory.models import (
     Memory,
+    MemoryConfidence,
     MemoryScope,
     MemoryStatus,
     MemoryType,
@@ -171,6 +177,160 @@ class TestDurableMemoryManager:
         results = manager.get_active()
         assert len(results) == 1
         assert results[0].id == active.id
+
+
+class TestApplyBatch:
+    """Test DurableMemoryManager.apply_batch atomic multi-candidate application."""
+
+    @pytest.fixture
+    def temp_db_path(self) -> Path:
+        """Create a temporary database path for testing."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            return Path(f.name)
+
+    @pytest.fixture
+    def store(self, temp_db_path: Path) -> Generator[SQLiteMemoryStore, None, None]:
+        """Create a store instance with temporary database."""
+        store = SQLiteMemoryStore(temp_db_path)
+        yield store
+        store.close()
+        temp_db_path.unlink(missing_ok=True)
+
+    @pytest.fixture
+    def manager(self, store: SQLiteMemoryStore) -> DurableMemoryManager:
+        """Create a DurableMemoryManager backed by the real store."""
+        return DurableMemoryManager(store)
+
+    def _candidate(
+        self,
+        content: str,
+        *,
+        type: MemoryType = MemoryType.USER_FACT,
+        scope: MemoryScope = MemoryScope.USER,
+        confidence: MemoryConfidence = MemoryConfidence.EXPLICIT,
+        project_id: str | None = None,
+        source_message_ids: tuple[str, ...] = ("msg-1",),
+    ) -> MemoryCandidate:
+        return MemoryCandidate(
+            type=type,
+            scope=scope,
+            content=content,
+            confidence=confidence,
+            source_conversation_id="conv-1",
+            source_message_ids=source_message_ids,
+            project_id=project_id,
+        )
+
+    def _memory(self, content: str, **kwargs) -> Memory:
+        defaults = {
+            "type": MemoryType.USER_FACT,
+            "scope": MemoryScope.USER,
+            "content": content,
+        }
+        defaults.update(kwargs)
+        if defaults["scope"] is MemoryScope.PROJECT and "project_id" not in defaults:
+            defaults["project_id"] = "test-project"
+        return Memory(**defaults)
+
+    def test_apply_batch_create(self, manager: DurableMemoryManager) -> None:
+        """Test apply_batch persists a CREATE resolution."""
+        resolution = Resolution(
+            kind=ResolutionKind.CREATE,
+            candidate=self._candidate(content="Batch fact"),
+        )
+        manager.apply_batch([resolution])
+
+        active = manager.get_active()
+        assert len(active) == 1
+        assert active[0].content == "Batch fact"
+
+    def test_apply_batch_mixed_commits_all(self, manager: DurableMemoryManager) -> None:
+        """Test a mixed batch (create + supersede + invalidate + reject) commits."""
+        old = self._memory(content="Old preference")
+        manager.save(old)
+        stale = self._memory(content="Stale fact")
+        manager.save(stale)
+
+        create_candidate = self._candidate(content="New preference")
+        supersede_candidate = self._candidate(content="Updated preference")
+        reject_candidate = self._candidate(content="Rejected fact")
+
+        manager.apply_batch(
+            [
+                Resolution(kind=ResolutionKind.CREATE, candidate=create_candidate),
+                Resolution(
+                    kind=ResolutionKind.SUPERSEDE,
+                    candidate=supersede_candidate,
+                    existing_memory_id=old.id,
+                ),
+                Resolution(
+                    kind=ResolutionKind.INVALIDATE,
+                    existing_memory_id=stale.id,
+                ),
+                Resolution(
+                    kind=ResolutionKind.REJECT,
+                    candidate=reject_candidate,
+                    reason="duplicate",
+                ),
+            ]
+        )
+
+        active = {m.content: m for m in manager.get_active()}
+        assert "New preference" in active
+        assert "Updated preference" in active
+        assert active["Updated preference"].supersedes == old.id
+
+        old_stored = manager.get(old.id)
+        assert old_stored is not None
+        assert old_stored.status is MemoryStatus.SUPERSEDED
+        assert old_stored.superseded_by is not None
+
+        stale_stored = manager.get(stale.id)
+        assert stale_stored is not None
+        assert stale_stored.status is MemoryStatus.INVALIDATED
+
+        assert "Rejected fact" not in active
+        assert len(active) == 2
+
+    def test_apply_batch_empty_is_noop(self, manager: DurableMemoryManager) -> None:
+        """Test an empty batch changes nothing."""
+        manager.apply_batch([])
+        assert manager.get_active() == []
+
+    def test_apply_batch_rolls_back_on_failure(self, manager: DurableMemoryManager) -> None:
+        """Test a failing operation rolls back the entire batch."""
+        resolution = Resolution(
+            kind=ResolutionKind.CREATE,
+            candidate=self._candidate(content="Should not persist"),
+        )
+        bad_resolution = Resolution(
+            kind=ResolutionKind.SUPERSEDE,
+            candidate=self._candidate(content="Replacement"),
+            existing_memory_id="missing-id",
+        )
+
+        with pytest.raises(MemoryNotFoundError, match="not found"):
+            manager.apply_batch([resolution, bad_resolution])
+
+        assert manager.get_active() == []
+
+    def test_apply_batch_rolls_back_on_invalidate_failure(
+        self, manager: DurableMemoryManager
+    ) -> None:
+        """Test an invalidate-missing operation rolls back the entire batch."""
+        resolution = Resolution(
+            kind=ResolutionKind.CREATE,
+            candidate=self._candidate(content="Should not persist"),
+        )
+        bad_resolution = Resolution(
+            kind=ResolutionKind.INVALIDATE,
+            existing_memory_id="missing-id",
+        )
+
+        with pytest.raises(MemoryNotFoundError, match="not found"):
+            manager.apply_batch([resolution, bad_resolution])
+
+        assert manager.get_active() == []
 
 
 if __name__ == "__main__":

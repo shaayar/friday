@@ -217,6 +217,59 @@ Project information should eventually feed the project workspace/context layer r
 
 This is architectural direction only. The extraction algorithm, LLM model, and database schema are intentionally not defined.
 
+**Conversation Compaction and Progressive Disclosure (future direction)**
+
+A post-Phase-3 refinement proposes moving historical-conversation
+handling from per-request runtime shrinking toward threshold-triggered,
+background, persistent conversation compaction. This is a proposed future
+architecture, not an implemented behavior.
+
+A strict distinction is maintained between:
+
+```
+Raw conversation        → source of truth, complete historical record
+Conversation summary    → compact continuity (what happened earlier?)
+Conversation decisions  → explicit agreements (what did we decide?)
+Durable memory          → cross-conversation knowledge worth retaining
+Runtime context         → temporary working set for one LLM call
+Skills                  → how FRIDAY performs an operation
+Knowledge blocks        → what FRIDAY knows about a subject/project
+```
+
+Intended direction (approximate; package boundaries not locked):
+
+```
+Raw conversation
+    ↓
+ConversationCompactor
+    ├── Conversation Summary
+    ├── Conversation Decisions
+    └── Topic/knowledge metadata
+             ↓
+        Knowledge Retrieval
+             ↓
+        ContextManager
+             ↓
+             LLM
+```
+
+Knowledge is intended to follow a progressive-disclosure model: small
+addressable blocks carry retrieval metadata (title, description, topic,
+project, type, updated_at, keywords); the runtime first identifies
+relevant knowledge and only then loads relevant content. Initial retrieval
+remains deterministic/simple. Vector search and embeddings are explicitly
+out of scope for now.
+
+Exact thresholds, summary format, decision schema, knowledge-block schema,
+retrieval mechanism, and the final context-degradation algorithm remain
+OPEN. Raw conversation remains the source of truth; compacted forms are
+regenerable indexes/caches of meaning.
+
+See:
+
+- `DECISION_LOG.md` — ADR-024
+- `FRIDAY_BUILD_LOG.md` — §42
+
 ---
 
 ### 10. AI Architecture

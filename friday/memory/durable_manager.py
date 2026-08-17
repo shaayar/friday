@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from friday.memory.candidates import Resolution, ResolutionKind, candidate_to_memory
 from friday.memory.exceptions import MemoryNotFoundError
 from friday.memory.models import (
     Memory,
@@ -74,6 +75,11 @@ class DurableMemoryManager:
         This is a semantic status transition — the memory remains in storage
         with status INVALIDATED and updated_at advanced.
         """
+        with self._storage.transaction():
+            return self._apply_invalidate(memory_id)
+
+    def _apply_invalidate(self, memory_id: str) -> Memory:
+        """Invalidate ``memory_id``. Assumes the caller holds a transaction."""
         memory = self._storage.get(memory_id)
         if memory is None:
             raise MemoryNotFoundError(f"Memory {memory_id} not found")
@@ -105,6 +111,14 @@ class DurableMemoryManager:
         2. Mark the old memory as SUPERSEDED with superseded_by = new_memory.id
 
         Both operations succeed or both fail (transactional).
+        """
+        with self._storage.transaction():
+            return self._apply_supersede(old_memory_id, new_memory)
+
+    def _apply_supersede(self, old_memory_id: str, new_memory: Memory) -> tuple[Memory, Memory]:
+        """Replace ``old_memory_id`` with ``new_memory``.
+
+        Assumes the caller holds a transaction.
         """
         old_memory = self._storage.get(old_memory_id)
         if old_memory is None:
@@ -148,11 +162,45 @@ class DurableMemoryManager:
         )
 
         # Atomic: both updates or neither
-        with self._storage.transaction():
-            saved_new = self._storage.save(linked_new)
-            saved_old = self._storage.update(superseded_old)
+        saved_new = self._storage.save(linked_new)
+        saved_old = self._storage.update(superseded_old)
 
         return saved_new, saved_old
+
+    def apply_batch(self, resolutions: list[Resolution]) -> list[Memory | None]:
+        """Apply a batch of resolutions atomically.
+
+        Either the entire batch commits or the entire batch rolls back.
+        Supported operations:
+
+        - CREATE     → persist the candidate as a new memory.
+        - SUPERSEDE  → replace ``existing_memory_id`` with the candidate.
+        - INVALIDATE → mark ``existing_memory_id`` invalidated.
+        - REJECT     → no-op (skipped).
+
+        Returns one entry per resolution (persisted memory for CREATE/SUPERSEDE,
+        the invalidated memory for INVALIDATE, None for REJECT).
+        """
+        if not resolutions:
+            return []
+
+        results: list[Memory | None] = []
+        with self._storage.transaction():
+            for resolution in resolutions:
+                kind = resolution.kind
+                candidate = resolution.candidate
+                if kind is ResolutionKind.REJECT:
+                    results.append(None)
+                elif kind is ResolutionKind.INVALIDATE:
+                    results.append(self._apply_invalidate(resolution.existing_memory_id))
+                elif kind is ResolutionKind.CREATE:
+                    memory = candidate_to_memory(candidate)
+                    results.append(self._storage.save(memory))
+                elif kind is ResolutionKind.SUPERSEDE:
+                    memory = candidate_to_memory(candidate)
+                    saved_new, _ = self._apply_supersede(resolution.existing_memory_id, memory)
+                    results.append(saved_new)
+        return results
 
     def get_active(
         self,

@@ -5,7 +5,7 @@ Tests for MemoryManager implementation.
 from __future__ import annotations
 
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -102,7 +102,7 @@ class FakeConversationStore:
         self._next_msg_id = 1
 
     def _utc_now(self) -> str:
-        return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        return datetime.now(UTC).isoformat(timespec="microseconds")
 
     def create_conversation(self) -> Conversation:
         now = self._utc_now()

@@ -659,6 +659,79 @@ Every subsystem
 
 ---
 
+## 15. Conversation Summary
+
+### Purpose
+
+Represents a compact, persisted representation of what happened earlier
+in a conversation.
+
+It answers:
+
+> What happened earlier in this conversation?
+
+A Conversation Summary is distinct from raw Conversation History and
+distinct from durable Memory. It is replaceable and regenerable as the
+conversation evolves, and can be rebuilt from raw history if necessary.
+
+### Produced By
+
+- Conversation Compactor (future, proposed)
+
+### Consumed By
+
+- Context Pipeline
+
+### Status
+
+Proposed future direction. The exact representation (structured record
+and/or Markdown) is OPEN and not yet finalized. Not implemented.
+
+---
+
+## 16. Conversation Decision
+
+### Purpose
+
+Represents an explicit agreement, conclusion, or decision made during a
+conversation.
+
+A Decision Record answers:
+
+> What did we decide?
+
+It is distinct from the general Conversation Summary and from durable
+Memory. Examples include selecting a technology, rejecting an
+architectural approach, agreeing on a project constraint, or changing a
+previous decision.
+
+### Fields (candidate)
+
+| Field | Description |
+|--------|-------------|
+| id | Decision identifier |
+| conversation_id | Parent conversation |
+| source_message_ids | Messages that produced the decision |
+| content | Decision content |
+| created_at / updated_at | Timestamps |
+| status | Optional status |
+
+### Produced By
+
+- Conversation Compactor / Decision Extractor (future, proposed)
+
+### Consumed By
+
+- Context Pipeline
+
+### Status
+
+Proposed future direction. Decision extraction must be conservative; an
+uncertain LLM inference must not automatically become a decision. The
+exact schema is OPEN and will be designed later. Not implemented.
+
+---
+
 ## Relationships
 
 ```text

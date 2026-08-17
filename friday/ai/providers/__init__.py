@@ -1,11 +1,11 @@
 import logging
 import os
 
-from friday.config import config
 from livekit.plugins import groq as lk_groq
 from livekit.plugins import openai as lk_openai
 from livekit.plugins import sarvam
 
+from friday.config import config
 
 logger = logging.getLogger("friday-agent")
 

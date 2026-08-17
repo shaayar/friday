@@ -120,19 +120,19 @@ class Memory:
         object.__setattr__(self, "content", self.content)
 
         if not isinstance(self.type, MemoryType):
-            raise ValueError(f"Invalid memory type: {self.type!r}")
+            raise TypeError(f"Invalid memory type: {self.type!r}")
         if not isinstance(self.scope, MemoryScope):
-            raise ValueError(f"Invalid memory scope: {self.scope!r}")
+            raise TypeError(f"Invalid memory scope: {self.scope!r}")
         expected_scope = self.type.default_scope
         if self.scope is not expected_scope:
             raise ValueError(f"Memory type {self.type.value!r} must use scope {expected_scope.value!r}")
 
         if not isinstance(self.status, MemoryStatus):
-            raise ValueError(f"Invalid memory status: {self.status!r}")
+            raise TypeError(f"Invalid memory status: {self.status!r}")
         if not isinstance(self.confidence, MemoryConfidence):
-            raise ValueError(f"Invalid memory confidence: {self.confidence!r}")
+            raise TypeError(f"Invalid memory confidence: {self.confidence!r}")
         if not isinstance(self.provenance, MemoryProvenance):
-            raise ValueError("provenance must be a MemoryProvenance instance")
+            raise TypeError("provenance must be a MemoryProvenance instance")
 
         created_at = _require_aware_timestamp("created_at", self.created_at)
         object.__setattr__(self, "created_at", created_at)

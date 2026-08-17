@@ -121,6 +121,23 @@ Status: Planned
 
 Deterministic and AI-assisted context optimization before prompt construction.
 
+Note: a post-Phase-3 refinement proposes moving historical-conversation
+compression from per-request runtime shrinking toward threshold-triggered,
+persistent conversation compaction. See DECISION_LOG.md ADR-024.
+
+---
+
+### Conversation Compaction
+
+Status: Planned
+
+Background, threshold-triggered compaction of raw conversation into
+reusable, persisted conversation summaries and decision records, keeping
+raw history as the source of truth. Intended to reduce or replace
+per-request runtime shrinking in normal operation.
+
+See DECISION_LOG.md ADR-024 and ARCHITECTURE.md.
+
 ---
 
 ### Home Automation

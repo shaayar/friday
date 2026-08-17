@@ -35,4 +35,17 @@ class _Config:
     FILESYSTEM_SEARCH_MAX_RESULTS = 100
     FILESYSTEM_SEARCH_MAX_DEPTH = 5
 
+    # Phase 3 — Memory distillation & context management
+    # Provisional implementation defaults, not architectural constants.
+    # All values are overridable at construction time.
+    EXTRACTION_CADENCE_TURNS = 10
+    EXTRACTION_WINDOW_MESSAGES = 20
+    CONTEXT_RECENT_TURNS = 10
+    CONTEXT_MEMORY_CAP = 10
+    CONTEXT_PROJECT_CAP_UNITS = 2_000
+    CONTEXT_MAX_INPUT_UNITS = 40_000
+    CONTEXT_RESERVED_OUTPUT_UNITS = 8_000
+    CONTEXT_SAFETY_MARGIN = 2_000
+    DEDUP_SIMILARITY_THRESHOLD = 0.85
+
 config = _Config()

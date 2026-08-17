@@ -1026,14 +1026,18 @@ Project Workspace               ✅
 CWD Detection                   ✅
 Explicit Project Activation     ✅
 Durable Conversation History    ✅
+Memory Domain Models            ✅
+Memory Storage (SQLite)         ✅
+Durable Memory Manager          ✅
+Memory Distillation             ✅
+Memory Resolver                 ✅
+Context Budget / Snapshot       ✅
+Context Shrinker                ✅
 
 Session.current_project         ⏳ deferred
-Memory Domain Models            ⏳ next
-Memory Storage                  ⏳
-Memory Resolver                 ⏳
-Memory Distillation             ⏳
-Context Manager                 ⏳
+Context Manager (assembly)      ⏳ next
 Context Retrieval               ⏳
+Runtime wiring (agent_friday)   ⏳ deferred
 Web Interface                   ⏳
 Agent naming                    ⏳
 ```
@@ -1145,3 +1149,247 @@ FRIDAY public build journal
 
 Future entries should record significant architectural changes as they
 happen rather than reconstructing them months later.
+
+------------------------------------------------------------------------
+
+## 38. Memory Domain Models and Storage
+
+The durable-memory subsystem (Milestone 3, Phase 2) was implemented and
+verified.
+
+Domain objects live in `friday/memory/models.py`:
+
+``` text
+Memory
+MemoryType      user_fact | project_fact | project_constraint |
+                project_decision | conversation_summary
+MemoryScope     user | project | conversation
+MemoryStatus    active | superseded | invalidated
+MemoryConfidence explicit | inferred | tentative
+MemoryProvenance source_conversation_id | source_message_ids
+```
+
+A dedicated SQLite store (`friday/memory/sqlite_memory_store.py`) backs a
+dedicated database:
+
+``` text
+~/.friday/data/memory.db
+```
+
+keeping durable knowledge separate from raw conversations
+(`conversations.db`) and the Markdown project workspace.
+
+`DurableMemoryManager` (`friday/memory/durable_manager.py`) owns high-level
+semantics: supersession, invalidation, and — added in Phase 3 — atomic batch
+application (`apply_batch`). It delegates primitive persistence to an
+injected `MemoryStorage`.
+
+Phase 2 verified:
+
+``` text
+103 memory tests passed
+195 full-suite tests passed
+```
+
+Ruff was clean on all new Phase 2 files. The remaining pre-existing
+findings inside the memory subsystem (invalid-type checks in
+`models.py`, the `__enter__` return annotation in `sqlite_store.py`, and
+two test-file issues) were later cleaned up, so
+`friday/memory`, `friday/context`, and `friday/ai` are all ruff-clean.
+Lint findings elsewhere (agent orchestration, tools, server, and
+pre-existing tests) remain outside this subsystem scope.
+
+------------------------------------------------------------------------
+
+## 39. Memory Distillation and Resolver
+
+The core distinction governs distillation:
+
+``` text
+RAW CONVERSATION ≠ LONG-TERM MEMORY
+```
+
+The pipeline is:
+
+``` text
+conversation transcript
+        ↓
+MemoryExtractor      → proposes candidates (LLM is a proposer)
+        ↓
+deterministic validation / parsing
+        ↓
+MemoryResolver       → decides CREATE / SUPERSEDE / INVALIDATE / REJECT
+        ↓
+DurableMemoryManager.apply_batch → atomic durable writes
+```
+
+`MemoryCandidate` (`friday/memory/candidates.py`) is the temporary,
+pre-identity proposal. It is never persisted. `Resolution` captures the
+resolver's decision; `candidate_to_memory` maps a candidate into a durable
+`Memory` only at execution time.
+
+`MemoryExtractor` (`friday/memory/extractor.py`):
+
+- considers only the most recent bounded window of messages (default 20)
+- asks an LLM for structured, third-person factual statements
+- tolerates malformed JSON (fenced, noisy, or object-wrapped output); bad
+  candidates are logged and skipped, never written
+- applies a deterministic trivia/relevance gate (`friday/memory/text.py`)
+- never persists and never calls the durable manager
+
+`MemoryResolver` (`friday/memory/resolver.py`) is the only component that
+decides mutations. It is conservative by design:
+
+- deduplication pipeline: normalize → exact → containment → difflib ratio
+  (threshold 0.85, configurable)
+- never supersedes or invalidates on weak heuristics; ambiguous overlaps
+  preserve the existing memory and reject the candidate (or consult an
+  advisory LLM when configured)
+- confidence may only be lowered: hedged EXPLICIT → TENTATIVE
+
+Scope mapping is a hard invariant: USER_FACT→USER, PROJECT_*→PROJECT,
+CONVERSATION_SUMMARY→CONVERSATION. PROJECT scope requires a project_id;
+non-PROJECT rejects one. The active project is context only and never
+auto-converts user facts into project facts.
+
+`DurableMemoryManager.apply_batch` applies a list of resolutions inside a
+single transaction — the whole batch commits or the whole batch rolls back.
+
+------------------------------------------------------------------------
+
+## 40. Context Management
+
+Context shrinking is separate from memory distillation:
+
+``` text
+Context Manager   → what should be sent to the LLM right now?
+Memory Distiller  → what knowledge should survive long-term?
+```
+
+The context package (`friday/context/`) provides the building blocks:
+
+- `ContextBudget` — bounds for assembled input, expressed in conservative
+  character-based units (deliberately not token counts)
+- `estimate_units` — ~4 characters per unit, over-counting rather than
+  risking overflow
+- `ContextSnapshot` — the immutable, testable result of one assembly pass
+  with sources ordered by priority
+- `ContextShrinker` — LLM-backed compression of older history into a short
+  factual summary
+
+Source priority (highest first):
+
+``` text
+1. system instructions     (never removed)
+2. current user message    (never removed)
+3. recent messages         (verbatim, recent turns)
+4. project context         (capped)
+5. durable memories        (capped)
+6. compressed history      (older conversation)
+```
+
+Removal/compression proceeds in reverse priority; the shrinker is only
+invoked when over budget. Configuration knobs (window sizes, caps, budget,
+dedup threshold) live on `friday/config.py` as class attributes, not in the
+domain models.
+
+Failure isolation is a standing rule: extraction, resolution, database,
+compression, and project-context failures must never break the primary
+conversation; they are logged.
+
+Provider independence is enforced: the memory and context packages depend
+only on a minimal `LLMBackend` protocol (`friday/ai/backend.py`) and never
+import openai/groq/sarvam/livekit. The actual runtime adapter to the
+existing LiveKit LLM is deferred to the future assistant/session layer.
+
+------------------------------------------------------------------------
+
+## 41. Milestone 3 Phase 3 Result
+
+Memory distillation and context management building blocks are implemented
+with deterministic, conservative semantics and full test coverage using
+fake LLM backends (no real provider calls in tests).
+
+``` text
+170 memory tests passed
+191 memory + context tests passed
+283 full-suite tests passed
+```
+
+Ruff is clean across `friday/memory`, `friday/context`, and `friday/ai`.
+
+Runtime wiring is deliberately out of scope for this phase: no
+`conversation_item_added` hook, no LiveKit session integration, and no
+production extraction/context loops. `agent_friday.py` and the build-log
+documentation were not modified as part of the implementation.
+
+The remaining next engineering step is a `ContextManager` that assembles
+these building blocks into a runtime context, followed by actual runtime
+wiring through a real assistant/session layer.
+
+------------------------------------------------------------------------
+
+## 42. ContextManager and Post-Phase-3 Direction
+
+A `ContextManager` (`friday/context/manager.py`) was added to assemble the
+context building blocks into a runtime `ContextSnapshot`. It:
+
+- preserves `system_instructions` and the `current_user_message` (never
+  removed)
+- preserves the recent window verbatim, targeting `2 × recent_turns`
+  messages, dropping complete oldest messages/turns only when over budget
+  (individual messages are never partially truncated)
+- retrieves durable memories (deterministic lexical relevance → confidence
+  → recency ranking) and project context, each capped
+- invokes `ContextShrinker` only into the leftover budget after the recent
+  window fits, compressing only the older window
+- keeps the compressed summary runtime-only (only in
+  `ContextSnapshot.compressed_history`; never persisted)
+- isolates failures: memory, project-context, and compression failures
+  degrade gracefully and never break the request
+
+Source priority is:
+
+``` text
+1. system instructions     (never removed)
+2. current user message    (never removed)
+3. recent messages         (verbatim, recent turns)
+4. project context         (capped)
+5. durable memories        (capped)
+6. compressed history      (older conversation)
+```
+
+This was verified against the full suite (309 tests passing) with the
+context package ruff-clean.
+
+### Post-Phase-3 architectural refinement
+
+A post-Phase-3 discussion revisited the runtime shrinking design. It is
+now understood that repeatedly generating a summary on every LLM request
+is unnecessarily expensive and adds latency.
+
+The preferred future direction is **conversation compaction**: move
+historical-conversation compression from per-request runtime behavior
+toward threshold-triggered, background, persistent compaction that
+produces reusable conversation summaries and decision records. Runtime
+context shrinking may eventually be reduced or eliminated in normal
+operation.
+
+The distinction is now explicit:
+
+``` text
+Raw conversation      → source of truth, complete historical record
+Conversation summary  → compact historical continuity (what happened?)
+Conversation decisions→ explicit agreements/conclusions (what did we decide?)
+Durable memory        → cross-conversation knowledge worth retaining
+Runtime context       → temporary working set for one LLM call
+Skills                → how FRIDAY performs an operation
+Knowledge blocks      → what FRIDAY knows about a subject/project
+```
+
+This is a proposed future architecture direction, not an implemented
+behavior. Exact thresholds, decision schema, summary format, knowledge-block
+schema, retrieval mechanism, and the final context-degradation algorithm
+remain OPEN. See `docs/DECISION_LOG.md` ADR-024 and `docs/ARCHITECTURE.md`.
+Raw conversation history remains the source of truth; compaction is an
+index/cache of meaning that can be regenerated from raw history.

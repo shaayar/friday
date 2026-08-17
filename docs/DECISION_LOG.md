@@ -697,10 +697,136 @@ Drawbacks:
 
 ---
 
+## ADR-024 — Conversation Compaction and Progressive Disclosure (Post-Phase-3)
+
+**Status**
+
+Proposed
+
+**Date**
+
+2026-08-15
+
+---
+
+### Context
+
+Phase 3 introduced `ContextManager` and `ContextShrinker`. The shrinker
+summarizes the older window with an LLM, but the resulting summary lives
+only in one `ContextSnapshot.compressed_history` and is regenerated on
+every LLM request. Repeating this summarization per request is
+unnecessarily expensive and adds latency.
+
+A post-Phase-3 discussion reconsidered how historical conversation
+should be handled, and distinguished several related-but-distinct
+concepts that were previously conflated.
+
+---
+
+### Decision
+
+Move historical-conversation compression from per-request runtime
+behavior toward **conversation compaction**: threshold-triggered,
+preferably background, persistent compaction that produces reusable
+historical knowledge. Runtime context shrinking may eventually be
+reduced or eliminated in normal operation.
+
+Adopt an explicit separation of concepts:
+
+``` text
+Raw conversation        source of truth; complete historical record
+Conversation summary    compact continuity — what happened earlier?
+Conversation decisions  explicit agreements — what did we decide?
+Durable memory          cross-conversation knowledge worth retaining
+Runtime context         temporary working set for one LLM call
+Skills                  how FRIDAY performs an operation
+Knowledge               what FRIDAY knows about a subject/project
+```
+
+Future context architecture (approximate; package boundaries not locked):
+
+``` text
+Raw conversation
+    ↓
+ConversationCompactor
+    ├── Conversation Summary
+    ├── Conversation Decisions
+    └── Topic/knowledge metadata
+             ↓
+        Knowledge Retrieval
+             ↓
+system instructions
+current user message
+recent conversation
+relevant project context
+relevant durable memories
+relevant conversation summary
+relevant conversation decisions
+relevant knowledge/skills
+             ↓
+        ContextManager
+             ↓
+             LLM
+```
+
+Knowledge should follow a progressive-disclosure model: small addressable
+blocks carry metadata (title, description, topic, project, type,
+updated_at, keywords) and only the content of relevant blocks is loaded.
+Initial retrieval remains deterministic/simple; no vector search or
+embeddings for now.
+
+Context priority policy: system and current message remain
+non-negotiable; recent conversation should be much harder to discard than
+low-priority project/memory material; individual messages are never
+partially truncated — remove complete oldest messages/turns if reduction
+is needed.
+
+Raw conversation remains the source of truth. Compaction must not
+initially delete raw history to save storage; the compact representation
+is an index/cache of meaning regenerable from raw history.
+
+---
+
+### Alternatives Considered
+
+Keep per-request runtime shrinking: simple and already implemented, but
+expensive and latency-adding.
+
+One generic document/knowledge system for all four concepts: rejected
+because it would conflate skills, knowledge, decisions, and memory.
+
+Vector/embedding retrieval now: deferred; initial retrieval stays
+deterministic.
+
+---
+
+### Consequences
+
+Benefits:
+
+- Lower per-request latency and cost for long conversations
+- Reusable, persisted summaries and decision records instead of
+  regeneration
+- Clear separation of raw history, summary, decisions, memory, skills,
+  and knowledge
+
+Drawbacks:
+
+- New compaction subsystem not yet implemented; additional design needed
+- Requires resolving threshold, schema, format, and retrieval questions
+- The exact context-degradation algorithm remains undecided
+
+Future considerations:
+
+- Conversation compaction may become the primary mechanism for
+  historical context, potentially reducing or eliminating the need for
+  runtime `ContextShrinker` in normal operation.
+
+---
+
 ## Future Decisions
 
 Reserved IDs:
-
 - ADR-011 — Desktop Interface
 - ADR-012 — Memory Storage Backend
 - ADR-013 — Provider Configuration
