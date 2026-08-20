@@ -48,4 +48,12 @@ class _Config:
     CONTEXT_SAFETY_MARGIN = 2_000
     DEDUP_SIMILARITY_THRESHOLD = 0.85
 
+    # Phase 4 — Persistent conversation compaction
+    # Locked: hybrid trigger (message count + size), COMPACTION_MESSAGE_THRESHOLD=20.
+    # OPEN: the exact size threshold value (provisional below); the mechanism
+    # uses the context subsystem's character-unit estimation (estimate_units).
+    COMPACTION_MESSAGE_THRESHOLD = 20
+    COMPACTION_MAX_WINDOW = 20
+    COMPACTION_SIZE_THRESHOLD_UNITS = 4_000  # provisional (Phase 4 OPEN value)
+
 config = _Config()

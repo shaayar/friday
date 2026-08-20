@@ -1,6 +1,5 @@
-"""
-FRIDAY - Voice Agent (MCP-powered)
-===================================
+"""FRIDAY - Voice Agent (MCP-powered)
+====================================
 Iron Man-style voice assistant that controls RGB lighting, runs diagnostics,
 scans the network, and triggers dramatic boot sequences via an MCP server
 running on the Windows host.
@@ -14,20 +13,20 @@ Run:
 
 import logging
 import subprocess
-from pathlib import Path
+from datetime import UTC
 
 from dotenv import load_dotenv
 from livekit.agents import JobContext, WorkerOptions, cli
-from livekit.agents.llm import ChatMessage, mcp
+from livekit.agents.llm import ChatContext, ChatMessage
 from livekit.agents.voice import Agent, AgentSession
-from friday.config import config
-from friday.ai.prompts import load_system_prompt
-from friday.ai.providers import build_llm, build_stt, build_tts
-from friday.memory.manager import MemoryManager
-from friday.memory.sqlite_store import SQLiteConversationStore
 
 # Plugins
 from livekit.plugins import silero
+
+from friday.ai.prompts import load_system_prompt
+from friday.ai.providers import build_llm, build_stt, build_tts
+from friday.config import config
+from friday.core.session import AssistantSession, create_assistant_session
 
 # ---------------------------------------------------------------------------
 # Bootstrap
@@ -50,13 +49,13 @@ def _get_windows_host_ip() -> str:
         # which is always the Windows host in WSL.
         cmd = "ip route show default | awk '{print $3}'"
         result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=2
+            cmd, shell=True, capture_output=True, text=True, timeout=2, check=False
         )
         ip = result.stdout.strip()
         if ip:
             logger.info("Resolved Windows host IP via gateway: %s", ip)
             return ip
-    except Exception as exc:
+    except OSError as exc:
         logger.warning("Gateway resolution failed: %s. Trying fallback...", exc)
 
     # Fallback to your original resolv.conf logic if 'ip route' fails
@@ -67,16 +66,13 @@ def _get_windows_host_ip() -> str:
                     ip = line.split()[1]
                     logger.info("Resolved Windows host IP via nameserver: %s", ip)
                     return ip
-    except Exception:
-        pass
+    except OSError:
+        logger.debug("resolv.conf read failed, using localhost")
 
     return "127.0.0.1"
 
 
 def _mcp_server_url() -> str:
-    # host_ip = _get_windows_host_ip()
-    # url = f"http://{host_ip}:{config.MCP_SERVER_PORT}/sse"
-    # url = f"https://ongoing-colleague-samba-pioneer.trycloudflare.com/sse"
     url = f"http://127.0.0.1:{config.MCP_SERVER_PORT}/sse"
     logger.info("MCP Server URL: %s", url)
     return url
@@ -87,12 +83,9 @@ def _mcp_server_url() -> str:
 # ---------------------------------------------------------------------------
 
 class FridayAgent(Agent):
-    """
-    F.R.I.D.A.Y. - Iron Man-style voice assistant.
-    All tools are provided via the MCP server on the Windows host.
-    """
+    """F.R.I.D.A.Y. - Iron Man-style voice assistant."""
 
-    def __init__(self, stt, llm, tts) -> None:
+    def __init__(self, stt, llm, tts, assistant_session: AssistantSession) -> None:
         super().__init__(
             instructions=load_system_prompt(),
             stt=stt,
@@ -100,18 +93,19 @@ class FridayAgent(Agent):
             tts=tts,
             vad=silero.VAD.load(),
             mcp_servers=[
-                mcp.MCPServerHTTP(
+                __import__("livekit.agents.llm", fromlist=["mcp"]).mcp.MCPServerHTTP(
                     url=_mcp_server_url(),
                     transport_type="sse",
                     client_session_timeout_seconds=30,
                 ),
             ],
         )
+        self._assistant_session = assistant_session
 
     async def on_enter(self) -> None:
         """Greet the user based on the current time of day."""
-        from datetime import datetime, timezone
-        hour = datetime.now(timezone.utc).hour  # UTC hour; adjust if local TZ differs
+        from datetime import datetime
+        hour = datetime.now(UTC).hour  # UTC hour; adjust if local TZ differs
 
         if hour >= 22 or hour < 4:
             greeting_instruction = (
@@ -135,6 +129,21 @@ class FridayAgent(Agent):
             )
 
         await self.session.generate_reply(instructions=greeting_instruction)
+
+    async def on_user_turn_completed(
+        self,
+        turn_ctx: ChatContext,
+        new_message: ChatMessage,
+    ) -> None:
+        """Assemble FRIDAY's budgeted context before the LLM responds.
+
+        The replacement context is applied to ``turn_ctx`` in place; LiveKit
+        passes this exact context to the LLM call for the current turn.
+        """
+        try:
+            self._assistant_session.assemble_context_for_turn(turn_ctx, new_message)
+        except Exception as exc:  # noqa: BLE001 - degrade, never break the turn
+            logger.warning("Context assembly failed; using default LiveKit context: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -164,22 +173,17 @@ async def entrypoint(ctx: JobContext) -> None:
     llm = build_llm()
     tts = build_tts()
 
-    # Use durable default SQLite database for conversation persistence
-    store = SQLiteConversationStore()
-    memory = MemoryManager(store)
-    conversation = memory.create_conversation()
+    # Create and start AssistantSession (owns stores, managers, context)
+    assistant_session = await create_assistant_session()
 
-    logger.info("Created conversation id=%s", conversation.id)
-
+    # Store in session userdata for event handlers
     session = AgentSession(
         turn_detection=_turn_detection(),
         min_endpointing_delay=_endpointing_delay(),
     )
-
-    # Store MemoryManager and conversation_id in session userdata for access in event handlers
     session.userdata = {
-        "memory": memory,
-        "conversation_id": conversation.id,
+        "assistant_session": assistant_session,
+        "conversation_id": assistant_session.conversation_id,
     }
 
     # Persist committed conversation items (user/assistant messages) to SQLite
@@ -193,7 +197,7 @@ async def entrypoint(ctx: JobContext) -> None:
             return
 
         conv_id = session.userdata["conversation_id"]
-        mem = session.userdata["memory"]
+        mem = session.userdata["assistant_session"].conversation_store
 
         if item.role == "user":
             mem.save_message(conv_id, "user", text)
@@ -204,15 +208,15 @@ async def entrypoint(ctx: JobContext) -> None:
 
     session.on("conversation_item_added", _on_conversation_item_added)
 
-    # Register shutdown callback to close store AFTER session fully stops
+    # Register shutdown callback to close stores AFTER session fully stops
     async def _cleanup(reason: str = "") -> None:
-        store.close()
-        logger.info("Closed conversation id=%s (reason: %s)", conversation.id, reason or "shutdown")
+        await assistant_session.stop()
+        logger.info("Closed assistant session (reason: %s)", reason or "shutdown")
 
     ctx.add_shutdown_callback(_cleanup)
 
     await session.start(
-        agent=FridayAgent(stt=stt, llm=llm, tts=tts),
+        agent=FridayAgent(stt=stt, llm=llm, tts=tts, assistant_session=assistant_session),
         room=ctx.room,
     )
 
@@ -221,11 +225,11 @@ async def entrypoint(ctx: JobContext) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
+def main() -> None:
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 
 
-def dev():
+def dev() -> None:
     """Wrapper to run the agent in dev mode automatically."""
     import sys
     # If no command was provided, inject 'dev'

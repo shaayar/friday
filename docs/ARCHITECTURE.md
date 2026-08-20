@@ -253,6 +253,26 @@ ConversationCompactor
              LLM
 ```
 
+The Knowledge Retrieval branch above remains primary. Compaction MAY
+additionally project selected outputs into durable memory as an optional,
+downstream step that is separate from context assembly:
+
+``` text
+ConversationCompactor
+    └── optional memory promotion
+            ↓
+        MemoryCandidate
+            ↓
+        MemoryResolver
+            ↓
+          memory.db
+```
+
+Promotion is an optional projection, not a conversion of the compaction
+record into memory. Conversation knowledge and durable memory remain
+distinct concepts. Promotion is strictly downstream of successful
+compaction persistence and never rolls back successful compaction.
+
 Knowledge is intended to follow a progressive-disclosure model: small
 addressable blocks carry retrieval metadata (title, description, topic,
 project, type, updated_at, keywords); the runtime first identifies
@@ -267,7 +287,7 @@ regenerable indexes/caches of meaning.
 
 See:
 
-- `DECISION_LOG.md` — ADR-024
+- `DECISION_LOG.md` — ADR-024, ADR-025
 - `FRIDAY_BUILD_LOG.md` — §42
 
 ---
@@ -313,6 +333,29 @@ Planned capabilities:
 - search_files
 
 The assistant must not receive unrestricted filesystem access. Filesystem operations must pass through an explicit capability/policy boundary.
+
+**Local Machine Control (future direction)**
+
+FRIDAY is intended to eventually interact with the local machine in a controlled way: opening applications, opening URLs, opening files/folders,
+inspecting running processes, and executing approved local commands.
+
+Architectural boundary: FRIDAY must NOT initially receive unrestricted arbitrary shell access. Local-machine capabilities are exposed as explicit,
+permissioned tools. Example future tools (not a locked final API):
+
+- open_application
+- close_application
+- open_url
+- open_file
+- open_folder
+- launch_command
+- get_running_processes
+
+The future local-system tool layer must support permission boundaries and
+distinguish safe application/file operations from potentially dangerous
+arbitrary command execution. This is planned direction only; no local-machine
+tools are implemented now.
+
+See DECISION_LOG.md ADR-026 (`docs/ADR-026.md`).
 
 ---
 
@@ -378,7 +421,168 @@ Core runtime
 
 ---
 
-### 16. Referenced Documents
+### 16. Agent Orchestration (Future Direction)
+
+FRIDAY is intended to become more than a voice assistant: a master agent
+orchestrator that delegates bounded tasks to specialized worker agents and
+independently verifies their results. This is planned direction, not an
+implemented behavior.
+
+Intended architecture:
+
+``` text
+User
+  ↓
+FRIDAY
+  ├── Memory / Context
+  ├── Task understanding
+  ├── Planner / Orchestrator
+  │      ├── Agent Registry
+  │      ├── OpenCode
+  │      ├── Hermes
+  │      └── future workers
+  │
+  ├── Verifier
+  │
+  └── Local System Tools
+         ├── application control
+         ├── file/folder operations
+         ├── URL opening
+         └── controlled command execution
+```
+
+Role flow:
+
+``` text
+User
+  ↓
+FRIDAY
+  ↓
+Task understanding / planning
+  ↓
+Agent selection
+  ↓
+Worker agent
+  ↓
+Independent verifier
+  ↓
+FRIDAY
+  ↓
+accept / retry / escalate
+```
+
+**Agent Registry**
+
+Individual agent implementations are not hard-coded into FRIDAY's core
+reasoning layer. Agents are described by manifests and accessed through
+adapters; FRIDAY selects agents based on capability. Conceptual layout
+(exact implementation OPEN):
+
+``` text
+agents/
+├── opencode/
+│   ├── manifest
+│   └── adapter
+├── hermes/
+│   ├── manifest
+│   └── adapter
+└── verifier/
+    ├── manifest
+    └── adapter
+```
+
+A manifest describes capabilities, permissions, supported task types, input
+contract, output contract, and execution mechanism.
+
+**Initial worker agents**
+
+- **OpenCode** — primary coding/software-engineering worker: repository
+  modification, implementation, debugging, testing, refactoring.
+- **Hermes** — general-purpose/operator worker: terminal/filesystem work,
+  web/browser tasks, broader autonomous operations, delegation where
+  appropriate.
+
+These are initial candidate workers, not permanent architectural
+dependencies. Adapters/contracts allow additional agents without changing
+the core orchestrator.
+
+**Independent verifier**
+
+The worker that performs a task must NOT automatically be trusted to declare
+its own work correct. A separate verifier/reviewer agent is first-class. It
+receives the original task contract, acceptance criteria, worker
+changes/results, test results, and relevant repository state, and returns a
+structured result: `PASS`, `FAIL`, or `NEEDS_REVIEW`. Verification is against
+acceptance criteria, not worker self-report. A failed verification may cause
+FRIDAY to return the task to the worker with feedback, select another worker,
+retry, or escalate to the user.
+
+**Task contract**
+
+Workers receive explicit, bounded Task Contracts rather than only free-form
+natural-language requests. Conceptual fields: task ID, objective,
+repository/workspace, constraints, acceptance criteria, expected outputs,
+relevant context, execution permissions. Exact schema OPEN.
+
+**Orchestration loop**
+
+``` text
+FRIDAY
+  ↓
+create Task Contract
+  ↓
+select worker
+  ↓
+execute worker
+  ↓
+collect result
+  ↓
+independent verifier
+  ↓
+PASS ───────────────→ accept
+  │
+  FAIL ──────────────→ retry/reassign
+  │
+  NEEDS_REVIEW ──────→ human escalation
+```
+
+The orchestration system should maintain execution state and results. No
+Session model is invented merely to represent this now; task/execution state
+is designed during the future orchestration phase.
+
+**Security / permission boundary**
+
+FRIDAY should NOT initially have unrestricted authority over arbitrary shell
+commands, filesystem deletion, credentials, system configuration, network
+access, or privileged operations. Agent capabilities are permissioned;
+workers receive only the permissions their task requires; the verifier has
+enough access to inspect and test work but does not automatically inherit
+unrestricted worker privileges. Arbitrary unrestricted local command
+execution is NOT the initial security model. Sandboxing/permission mechanics
+are OPEN.
+
+**Relation to memory / context**
+
+The existing memory/context architecture remains authoritative. The future
+orchestration layer eventually uses:
+
+``` text
+Memory      → persistent user/project knowledge
+Context     → per-invocation working context
+Compaction  → persistent conversation knowledge/context
+Task state  → future execution state
+```
+
+These are NOT collapsed into one storage mechanism. Worker results and
+important task outcomes may eventually become inputs to FRIDAY's
+memory/compaction systems through explicit pipelines (not implemented now).
+
+Locked principles and open implementation details are separated in
+DECISION_LOG.md ADR-026 (`docs/ADR-026.md`).
+
+---
+
+### 17. Referenced Documents
 
 [REQUEST_LIFECYCLE.md](./REQUEST_LIFECYCLE.md)
 

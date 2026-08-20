@@ -769,6 +769,25 @@ relevant knowledge/skills
              LLM
 ```
 
+The Knowledge Retrieval branch above remains the primary path. Compaction
+MAY additionally project selected outputs into durable memory as an
+optional, downstream step that is separate from context assembly:
+
+``` text
+ConversationCompactor
+    └── optional memory promotion
+            ↓
+        MemoryCandidate
+            ↓
+        MemoryResolver
+            ↓
+          memory.db
+```
+
+Promotion is an optional projection, not a conversion of the compaction
+record into memory. Conversation knowledge and durable memory remain
+distinct concepts. See ADR-025.
+
 Knowledge should follow a progressive-disclosure model: small addressable
 blocks carry metadata (title, description, topic, project, type,
 updated_at, keywords) and only the content of relevant blocks is loaded.
@@ -821,6 +840,56 @@ Future considerations:
 - Conversation compaction may become the primary mechanism for
   historical context, potentially reducing or eliminating the need for
   runtime `ContextShrinker` in normal operation.
+
+---
+
+## ADR-025 — Compaction Memory Promotion
+
+**Status**
+
+Accepted
+
+**Date**
+
+2026-08-18
+
+---
+
+Promotion of conversation compaction into durable memory is locked
+architecturally: compaction is context, NOT durable memory; promotion is an
+optional downstream projection through the existing memory pipeline
+(`MemoryCandidate` → `MemoryResolver` → `DurableMemoryManager.apply_batch`
+→ memory.db), with category eligibility, deterministic confidence/project
+identity, and a promotion ledger keyed by `CompactionItem.item_id`.
+
+Full decision: see `docs/ADR-025.md`.
+
+---
+
+## ADR-026 — Master Agent Orchestration and Local Machine Control
+
+**Status**
+
+Accepted
+
+**Date**
+
+2026-08-19
+
+---
+
+FRIDAY's future direction is recorded as master agent orchestration:
+FRIDAY is the decision-maker/orchestrator that delegates bounded tasks to
+specialized worker agents (initial candidates: OpenCode for coding,
+Hermes for general/operator work) via an Agent Registry and adapters rather
+than hard-coded implementations, and independently verifies results through
+a separate verifier agent against explicit Task Contracts. Local-machine
+interaction (applications, URLs, files/folders, process inspection, approved
+commands) will be exposed through explicit, permissioned tools — NOT
+unrestricted arbitrary shell access. Memory/context/compaction/task state
+remain conceptually separate.
+
+Full decision, including the LOCKED vs OPEN split: see `docs/ADR-026.md`.
 
 ---
 
