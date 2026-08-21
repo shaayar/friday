@@ -129,7 +129,58 @@ Key direction:
 - Task/execution state is designed in the future orchestration phase; no
   Session model is invented now.
 
-See DECISION_LOG.md ADR-026 (`docs/ADR-026.md`) and ARCHITECTURE.md §16.
+Phased roadmap:
+
+M8.1 — Single-Worker Orchestration Foundation (NOT STARTED)
+- Task Contract domain model
+- In-memory Agent Registry
+- Worker Adapter protocol + OpenCode adapter
+- Deterministic Verifier
+- Orchestration Loop
+- Retry & Escalation
+- Single-task vertical slice
+
+M8.2 — Multi-Worker Orchestration (Future)
+- Hermes Adapter
+- Capability-Based Agent Selection
+- Reassignment
+- Worker Health / Availability
+- Multi-Worker Verification
+
+M8.3 — Task State & Reliability (Future)
+- Execution State Model
+- Task Lifecycle
+- Task/Result Persistence
+- Restart Recovery
+- Retry/Reconciliation
+- Concurrency Control
+
+M8.4 — Permissioned Local Machine Control (Future)
+- Tool Permission Model
+- File Operations
+- Command Execution
+- Network Permissions
+- Approval Boundaries
+- Sandboxing / Isolation
+- Audit Logging
+- Security Verification
+Hard boundary: NO unrestricted shell.
+
+M8.5 — Advanced Orchestration (Future)
+- Multi-step task planning
+- Task decomposition
+- Agent-to-agent delegation
+- Parallel workers
+- Dependency-aware execution
+- Richer verifier strategies
+- Human-in-the-loop approval
+- Scheduling
+- Long-running tasks
+
+M8.6 — Local Intelligence (Future)
+Aligned with Local Intelligence / Tiny ML Layer entry below.
+
+See DECISION_LOG.md ADR-026 (`docs/ADR-026.md`) and ARCHITECTURE.md §16d.
 
 ---
 
@@ -178,11 +229,61 @@ per-request runtime shrinking in normal operation.
 
 Compaction may also optionally project selected items into durable memory
 through the existing memory pipeline. Automatic/background promotion is
-deferred until a runtime/orchestration seam exists; promotion is explicitly
-invocable in the current implementation phase.
+deferred until a runtime/orchestration seam exists; promotion is live
+downstream of successful compaction in the current runtime.
 
 See DECISION_LOG.md ADR-024, ADR-025 (`docs/ADR-025.md`), and
 ARCHITECTURE.md.
+
+---
+
+### Local Intelligence / Tiny ML Layer
+
+Status: Future
+
+FRIDAY may eventually use small local ML models and deterministic
+classifiers for routine decisions, allowing the primary LLM
+(API or Ollama) to focus on complex reasoning.
+
+Potential future workloads include:
+
+- memory classification
+- fact/category classification
+- memory relevance scoring
+- routine compaction decisions
+- task routing
+- simple result classification
+- deciding whether a task requires the main reasoning model
+
+Possible model families:
+
+- logistic regression
+- decision trees
+- small neural networks
+- other lightweight classifiers/rankers
+
+Do NOT lock the model architecture. Do NOT claim linear regression is the
+selected model.
+
+Intended hierarchy:
+
+deterministic rules
+        ↓
+small local ML
+        ↓
+main reasoning model
+
+Use the principle:
+
+Use deterministic code where certainty is possible,
+small models where patterns are learnable,
+and the main model where reasoning is actually required.
+
+Also document the future possibility of learning from FRIDAY's accumulated
+decision traces, where appropriate and supported by the existing architecture.
+
+Important: This remains FUTURE WORK. Do NOT connect it to the current
+memory/compaction/promotion runtime.
 
 ---
 

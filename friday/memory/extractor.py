@@ -77,7 +77,7 @@ class MemoryExtractor:
         self._window_size = window_size
         self._min_messages = min_messages
 
-    def extract(
+    async def extract(
         self,
         messages: Sequence[Message],
         *,
@@ -101,7 +101,7 @@ class MemoryExtractor:
         user_ids = tuple(str(mid) for mid, role, _ in window if role == "user")
         all_ids = tuple(str(mid) for mid, _, _ in window)
 
-        raw_items = self._ask_llm(transcript)
+        raw_items = await self._ask_llm(transcript)
         if raw_items is None:
             return []
 
@@ -127,9 +127,9 @@ class MemoryExtractor:
         lines = [f"[{message_id}] {role}: {content}" for message_id, role, content in window]
         return "\n".join(lines)
 
-    def _ask_llm(self, transcript: str) -> list[dict] | None:
+    async def _ask_llm(self, transcript: str) -> list[dict] | None:
         try:
-            raw = self._llm.complete(_SYSTEM_PROMPT, transcript)
+            raw = await self._llm.complete(_SYSTEM_PROMPT, transcript)
         except Exception:  # noqa: BLE001 - extraction must never break the conversation
             logger.warning("Memory extraction LLM call failed; skipping this round")
             return None

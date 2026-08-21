@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,7 +38,7 @@ class FakeLLM:
         self._response = response
         self.calls = 0
 
-    def complete(self, system: str, user: str) -> str:
+    async def complete(self, system: str, user: str) -> str:
         self.calls += 1
         return self._response
 
@@ -56,7 +57,7 @@ class RaisingExtractor:
         self._error = error
         self.calls = 0
 
-    def extract(self, messages, *, conversation_id):
+    async def extract(self, messages, *, conversation_id):
         self.calls += 1
         raise self._error
 
@@ -66,7 +67,7 @@ class StubExtractor:
         self._compaction = compaction
         self.calls = 0
 
-    def extract(self, messages, *, conversation_id):
+    async def extract(self, messages, *, conversation_id):
         self.calls += 1
         return self._compaction
 
@@ -145,11 +146,16 @@ def make_compactor(
     return compactor, llm
 
 
+def run_compact(compactor, messages, **kwargs) -> CompactionResult:
+    """Run the (now async) compactor synchronously in the test's fresh loop."""
+    return asyncio.run(compactor.compact(messages, **kwargs))
+
+
 class TestNormalTrigger:
     def test_below_threshold_no_compaction(self) -> None:
         store = FakeStore()
         compactor, llm = make_compactor(store, message=20)
-        result = compactor.compact(messages(*range(1, 20)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 20)), conversation_id=1)
         assert result == CompactionResult(compacted=False, compaction=None, remaining_messages=19)
         assert llm.calls == 0
         assert store.saved == []
@@ -157,7 +163,7 @@ class TestNormalTrigger:
     def test_at_threshold_compacts(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
-        result = compactor.compact(messages(*range(1, 21)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert result.compaction.first_message_id == 1
@@ -166,7 +172,7 @@ class TestNormalTrigger:
     def test_above_threshold_compacts_one_bounded_window(self) -> None:
         store = FakeStore()
         compactor, llm = make_compactor(store, message=20, window=20)
-        result = compactor.compact(messages(*range(1, 22)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 22)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert (result.compaction.first_message_id, result.compaction.last_message_id) == (1, 20)
@@ -177,7 +183,7 @@ class TestNormalTrigger:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20, size=4000)
         big = messages(*range(1, 6), content="x" * 4000)
-        result = compactor.compact(big, conversation_id=1)
+        result = run_compact(compactor, big, conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert result.compaction.first_message_id == 1
@@ -185,7 +191,7 @@ class TestNormalTrigger:
     def test_exactly_20_with_threshold_20(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
-        result = compactor.compact(messages(*range(1, 21)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert result.compaction.last_message_id == 20
@@ -194,14 +200,14 @@ class TestNormalTrigger:
     def test_19_messages_no_normal_compaction(self) -> None:
         store = FakeStore()
         compactor, llm = make_compactor(store, message=20)
-        result = compactor.compact(messages(*range(1, 20)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 20)), conversation_id=1)
         assert not result.compacted
         assert llm.calls == 0
 
     def test_21_messages_compacts_only_one_bounded_window(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20, window=20)
-        result = compactor.compact(messages(*range(1, 22)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 22)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert (result.compaction.first_message_id, result.compaction.last_message_id) == (1, 20)
@@ -213,7 +219,7 @@ class TestForce:
     def test_force_compacts_below_threshold(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
-        result = compactor.compact(messages(*range(1, 5)), conversation_id=1, force=True)
+        result = run_compact(compactor, messages(*range(1, 5)), conversation_id=1, force=True)
         assert result.compacted
         assert result.compaction is not None
         assert (result.compaction.first_message_id, result.compaction.last_message_id) == (1, 4)
@@ -221,8 +227,8 @@ class TestForce:
     def test_force_with_no_uncompacted_messages_is_noop(self) -> None:
         store = FakeStore()
         compactor, llm = make_compactor(store, message=20)
-        assert compactor.compact(messages(*range(1, 5)), conversation_id=1, force=True).compacted
-        result = compactor.compact(messages(*range(1, 5)), conversation_id=1, force=True)
+        assert run_compact(compactor, messages(*range(1, 5)), conversation_id=1, force=True).compacted
+        result = run_compact(compactor, messages(*range(1, 5)), conversation_id=1, force=True)
         assert not result.compacted
         assert result.remaining_messages == 0
         assert llm.calls == 1
@@ -230,7 +236,7 @@ class TestForce:
     def test_force_respects_max_window(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20, window=10)
-        result = compactor.compact(messages(*range(1, 31)), conversation_id=1, force=True)
+        result = run_compact(compactor, messages(*range(1, 31)), conversation_id=1, force=True)
         assert result.compacted
         assert result.compaction is not None
         assert (result.compaction.first_message_id, result.compaction.last_message_id) == (1, 10)
@@ -239,7 +245,7 @@ class TestForce:
     def test_additional_work_detectable_after_bounded_force(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20, window=10)
-        result = compactor.compact(messages(*range(1, 31)), conversation_id=1, force=True)
+        result = run_compact(compactor, messages(*range(1, 31)), conversation_id=1, force=True)
         assert result.compacted
         assert result.remaining_messages == 20
 
@@ -248,7 +254,7 @@ class TestIncremental:
     def test_first_compaction_starts_at_first_message(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
-        result = compactor.compact(messages(*range(1, 41)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 41)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert (result.compaction.first_message_id, result.compaction.last_message_id) == (1, 20)
@@ -257,8 +263,8 @@ class TestIncremental:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
         msgs = messages(*range(1, 41))
-        compactor.compact(msgs, conversation_id=1)
-        second = compactor.compact(msgs, conversation_id=1)
+        run_compact(compactor, msgs, conversation_id=1)
+        second = run_compact(compactor, msgs, conversation_id=1)
         assert second.compacted
         assert second.compaction is not None
         assert (second.compaction.first_message_id, second.compaction.last_message_id) == (21, 40)
@@ -268,9 +274,9 @@ class TestIncremental:
         store = FakeStore()
         compactor, llm = make_compactor(store, message=20)
         msgs = messages(*range(1, 41))
-        assert compactor.compact(msgs, conversation_id=1).compacted
-        assert compactor.compact(msgs, conversation_id=1).compacted
-        result = compactor.compact(msgs, conversation_id=1)
+        assert run_compact(compactor, msgs, conversation_id=1).compacted
+        assert run_compact(compactor, msgs, conversation_id=1).compacted
+        result = run_compact(compactor, msgs, conversation_id=1)
         assert not result.compacted
         assert result.remaining_messages == 0
         assert llm.calls == 2
@@ -279,8 +285,8 @@ class TestIncremental:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
         msgs = messages(*range(1, 41))
-        compactor.compact(msgs, conversation_id=1)
-        compactor.compact(msgs, conversation_id=1)
+        run_compact(compactor, msgs, conversation_id=1)
+        run_compact(compactor, msgs, conversation_id=1)
         ranges = [(c.first_message_id, c.last_message_id) for c in store.list_for_conversation(1)]
         assert ranges == [(1, 20), (21, 40)]
         assert ranges[0][1] < ranges[1][0]
@@ -289,8 +295,8 @@ class TestIncremental:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20, window=20)
         msgs = messages(*range(1, 25))
-        compactor.compact(msgs, conversation_id=1)
-        second = compactor.compact(msgs, conversation_id=1, force=True)
+        run_compact(compactor, msgs, conversation_id=1)
+        second = run_compact(compactor, msgs, conversation_id=1, force=True)
         assert second.compacted
         assert second.compaction is not None
         assert (second.compaction.first_message_id, second.compaction.last_message_id) == (21, 24)
@@ -304,12 +310,12 @@ class TestBoundary:
         store.save(make_compaction(compaction_id="c2", conversation_id=1, first_message_id=50, last_message_id=70))
         compactor, llm = make_compactor(store, message=20, window=20)
 
-        noop = compactor.compact(messages(*range(1, 71)), conversation_id=1)
+        noop = run_compact(compactor, messages(*range(1, 71)), conversation_id=1)
         assert not noop.compacted
         assert noop.remaining_messages == 0
         assert llm.calls == 0
 
-        result = compactor.compact(messages(*range(1, 101)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 101)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert (result.compaction.first_message_id, result.compaction.last_message_id) == (71, 90)
@@ -324,9 +330,9 @@ class TestIdempotency:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
         msgs = messages(*range(1, 21))
-        first = compactor.compact(msgs, conversation_id=1)
+        first = run_compact(compactor, msgs, conversation_id=1)
         assert first.compacted
-        second = compactor.compact(msgs, conversation_id=1)
+        second = run_compact(compactor, msgs, conversation_id=1)
         assert not second.compacted
         assert len(store.list_for_conversation(1)) == 1
         assert len(store.saved) == 1
@@ -337,13 +343,13 @@ class TestIdempotency:
         store.preseed_hidden(existing)
 
         class DuplicateStub:
-            def extract(self, messages, *, conversation_id):
+            async def extract(self, messages, *, conversation_id):
                 return make_compaction(
                     compaction_id="dup-1", conversation_id=1, first_message_id=1, last_message_id=20
                 )
 
         compactor = ConversationCompactor(store, DuplicateStub(), message_threshold=20, max_window=20, unit_threshold=None)
-        result = compactor.compact(messages(*range(1, 21)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert result.compaction.compaction_id == "dup-1"
@@ -357,7 +363,7 @@ class TestFailures:
         extractor = RaisingExtractor(CompactionOutputError("malformed"))
         compactor = ConversationCompactor(store, extractor, message_threshold=20, max_window=20, unit_threshold=None)
         with pytest.raises(CompactionOutputError):
-            compactor.compact(messages(*range(1, 21)), conversation_id=1)
+            run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert store.saved == []
         assert store.list_for_conversation(1) == []
 
@@ -366,7 +372,7 @@ class TestFailures:
         extractor = RaisingExtractor(CompactionProviderError("provider down"))
         compactor = ConversationCompactor(store, extractor, message_threshold=20, max_window=20, unit_threshold=None)
         with pytest.raises(CompactionProviderError):
-            compactor.compact(messages(*range(1, 21)), conversation_id=1)
+            run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert store.saved == []
 
     def test_storage_failure_does_not_report_success(self) -> None:
@@ -374,7 +380,7 @@ class TestFailures:
         store.fail_save = CompactionCorruptError("disk full")
         compactor, _ = make_compactor(store, message=20)
         with pytest.raises(CompactionCorruptError):
-            compactor.compact(messages(*range(1, 21)), conversation_id=1)
+            run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert store.saved == []
 
     def test_malformed_llm_output_does_not_advance_boundary(self) -> None:
@@ -382,10 +388,10 @@ class TestFailures:
         compactor, _ = make_compactor(store, message=20, llm_response="not json at all")
         msgs = messages(*range(1, 21))
         with pytest.raises(CompactionOutputError):
-            compactor.compact(msgs, conversation_id=1)
+            run_compact(compactor, msgs, conversation_id=1)
         assert store.saved == []
         with pytest.raises(CompactionOutputError):
-            compactor.compact(msgs, conversation_id=1)
+            run_compact(compactor, msgs, conversation_id=1)
         assert store.saved == []
 
     def test_failure_does_not_mutate_raw_messages(self) -> None:
@@ -394,7 +400,7 @@ class TestFailures:
         compactor, _ = make_compactor(store, message=20)
         msgs = messages(*range(1, 21))
         with pytest.raises(CompactionCorruptError):
-            compactor.compact(msgs, conversation_id=1)
+            run_compact(compactor, msgs, conversation_id=1)
         assert [m.id for m in msgs] == list(range(1, 21))
 
 
@@ -402,7 +408,7 @@ class TestPersistence:
     def test_successful_extraction_persists_exactly_one(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
-        result = compactor.compact(messages(*range(1, 21)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert result.compacted
         assert len(store.saved) == 1
         assert store.get(result.compaction.compaction_id) == result.compaction
@@ -410,7 +416,7 @@ class TestPersistence:
     def test_compaction_version_passed_consistently(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20, compaction_version=2)
-        result = compactor.compact(messages(*range(1, 21)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert result.compaction.compaction_version == 2
@@ -422,8 +428,8 @@ class TestIsolation:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=2)
         msgs = messages(*range(1, 5))
-        r_a = compactor.compact(msgs, conversation_id=1)
-        r_b = compactor.compact(msgs, conversation_id=2)
+        r_a = run_compact(compactor, msgs, conversation_id=1)
+        r_b = run_compact(compactor, msgs, conversation_id=2)
         assert r_a.compacted and r_b.compacted
         a_compactions = store.list_for_conversation(1)
         b_compactions = store.list_for_conversation(2)
@@ -436,14 +442,14 @@ class TestConfigurability:
     def test_configurable_message_threshold(self) -> None:
         store = FakeStore()
         compactor, llm = make_compactor(store, message=5)
-        assert not compactor.compact(messages(*range(1, 5)), conversation_id=1).compacted
-        assert compactor.compact(messages(*range(1, 6)), conversation_id=1).compacted
+        assert not run_compact(compactor, messages(*range(1, 5)), conversation_id=1).compacted
+        assert run_compact(compactor, messages(*range(1, 6)), conversation_id=1).compacted
         assert llm.calls == 1
 
     def test_configurable_max_window(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20, window=8)
-        result = compactor.compact(messages(*range(1, 21)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 21)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert (result.compaction.first_message_id, result.compaction.last_message_id) == (1, 8)
@@ -454,7 +460,7 @@ class TestEdgeCases:
     def test_empty_conversation_deterministic_noop(self) -> None:
         store = FakeStore()
         compactor, llm = make_compactor(store, message=20)
-        result = compactor.compact((), conversation_id=1)
+        result = run_compact(compactor, (), conversation_id=1)
         assert not result.compacted
         assert result.compaction is None
         assert result.remaining_messages == 0
@@ -465,27 +471,27 @@ class TestEdgeCases:
         compactor, _ = make_compactor(store, message=20)
         msgs = messages(*range(1, 21))
         original = tuple(msgs)
-        compactor.compact(msgs, conversation_id=1)
+        run_compact(compactor, msgs, conversation_id=1)
         assert msgs == original
         assert [m.id for m in msgs] == list(range(1, 21))
 
     def test_trigger_calculation_does_not_call_llm(self) -> None:
         store = FakeStore()
         compactor, llm = make_compactor(store, message=20)
-        compactor.compact(messages(*range(1, 5)), conversation_id=1)
+        run_compact(compactor, messages(*range(1, 5)), conversation_id=1)
         assert llm.calls == 0
 
     def test_trigger_calculation_does_not_write_storage(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=20)
-        compactor.compact(messages(*range(1, 5)), conversation_id=1)
+        run_compact(compactor, messages(*range(1, 5)), conversation_id=1)
         assert store.saved == []
         assert store.list_for_conversation(1) == []
 
     def test_fewer_messages_than_max_window_all_selected(self) -> None:
         store = FakeStore()
         compactor, _ = make_compactor(store, message=3, window=10)
-        result = compactor.compact(messages(*range(1, 5)), conversation_id=1)
+        result = run_compact(compactor, messages(*range(1, 5)), conversation_id=1)
         assert result.compacted
         assert result.compaction is not None
         assert (result.compaction.first_message_id, result.compaction.last_message_id) == (1, 4)
@@ -509,7 +515,7 @@ class TestIntegration:
             llm = FakeLLM(EMPTY_JSON)
             extractor = ConversationCompactionExtractor(llm)
             compactor = ConversationCompactor(cstore, extractor, message_threshold=20, max_window=20, unit_threshold=None)
-            result = compactor.compact(msgs, conversation_id=conv.id, force=True)
+            result = run_compact(compactor, msgs, conversation_id=conv.id, force=True)
             assert result.compacted
             assert result.compaction is not None
             assert result.compaction.conversation_id == conv.id

@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 import pytest
 
 from friday.context.manager import ContextManager, ProjectContext
-from friday.context.models import Message
+from friday.context.models import ContextSnapshot, Message
 from friday.context.shrinker import ContextShrinker
 from friday.core.session import AssistantSession
 from friday.memory.models import (
@@ -34,7 +34,7 @@ class FakeLLMBackend:
         self.response = response
         self.calls = []
 
-    def complete(self, system: str, user: str) -> str:
+    async def complete(self, system: str, user: str) -> str:
         self.calls.append((system, user))
         return self.response
 
@@ -127,6 +127,50 @@ def make_memory(
 
 
 # ======================================================================
+# Helpers
+# ======================================================================
+
+def make_snapshot(
+    *,
+    system_instructions: str = "You are FRIDAY.",
+    current_user_message: str = "",
+    recent_messages: Sequence[tuple[str, str, str]] = (),
+    project_context: str | None = None,
+    durable_memories: tuple[Memory, ...] = (),
+    compressed_history: str | None = None,
+) -> ContextSnapshot:
+    from friday.context.models import ContextBudget
+
+    return ContextSnapshot(
+        system_instructions=system_instructions,
+        current_user_message=current_user_message,
+        recent_messages=tuple(recent_messages),
+        project_context=project_context,
+        durable_memories=durable_memories,
+        compressed_history=compressed_history,
+        budget=ContextBudget(max_input_units=40000, reserved_output_units=8000, safety_margin=2000),
+        estimated_units=1000,
+        compressed=compressed_history is not None,
+    )
+
+
+def make_turn_context(
+    messages: Sequence[tuple[str, str, str]] = (),
+    *,
+    tool_items: Sequence[object] | None = None,
+) -> object:
+    """Build a LiveKit ChatContext like the copy passed to on_user_turn_completed."""
+    from livekit.agents.llm import ChatContext
+
+    ctx = ChatContext.empty()
+    for msg_id, role, content in messages:
+        ctx.add_message(role=role, content=[content], id=msg_id)
+    for item in tool_items or ():
+        ctx.insert(item)
+    return ctx
+
+
+# ======================================================================
 # Test: LiveKit Message Conversion
 # ======================================================================
 
@@ -199,10 +243,9 @@ class TestContextSnapshotToLiveKitContext:
 
     def test_all_sections_appear_correctly(self):
         session = AssistantSession()
-        from friday.context.models import ContextBudget, ContextSnapshot
 
         # Build a snapshot with all sections
-        snapshot = ContextSnapshot(
+        snapshot = make_snapshot(
             system_instructions="You are FRIDAY.",
             current_user_message="What editor?",
             recent_messages=(
@@ -215,12 +258,10 @@ class TestContextSnapshotToLiveKitContext:
                 make_memory("Project uses Python.", "mem-2", scope=MemoryScope.PROJECT, project_id="proj-1"),
             ),
             compressed_history="Earlier: discussed editor preferences.",
-            budget=ContextBudget(max_input_units=40000, reserved_output_units=8000, safety_margin=2000),
-            estimated_units=1000,
-            compressed=True,
         )
+        turn_ctx = make_turn_context(snapshot.recent_messages)
 
-        ctx = session._snapshot_to_chat_context(snapshot)
+        ctx = session._build_replacement_context(turn_ctx, snapshot)
 
         # Verify all sections present as structured messages
         items = ctx.items
@@ -254,24 +295,18 @@ class TestContextSnapshotToLiveKitContext:
     def test_current_user_message_not_duplicated(self):
         """The current user message should NOT be in the built context."""
         session = AssistantSession()
-        from friday.context.models import ContextBudget, ContextSnapshot
 
-        snapshot = ContextSnapshot(
+        snapshot = make_snapshot(
             system_instructions="System",
             current_user_message="Current user message",
             recent_messages=(
                 ("msg-1", "user", "Previous user"),
                 ("msg-2", "assistant", "Previous assistant"),
             ),
-            project_context=None,
-            durable_memories=(),
-            compressed_history=None,
-            budget=ContextBudget(max_input_units=40000, reserved_output_units=8000, safety_margin=2000),
-            estimated_units=100,
-            compressed=False,
         )
+        turn_ctx = make_turn_context(snapshot.recent_messages)
 
-        ctx = session._snapshot_to_chat_context(snapshot)
+        ctx = session._build_replacement_context(turn_ctx, snapshot)
         contents = [item.text_content or "" for item in ctx.items]
 
         # The current user message should NOT appear
@@ -279,6 +314,25 @@ class TestContextSnapshotToLiveKitContext:
         # But previous messages should
         assert any("Previous user" in c for c in contents)
         assert any("Previous assistant" in c for c in contents)
+
+    def test_kept_messages_limited_to_snapshot_budget(self):
+        """Messages outside the budgeted subset must not be re-added."""
+        session = AssistantSession()
+
+        snapshot = make_snapshot(
+            system_instructions="System",
+            recent_messages=(("kept-1", "user", "Kept"),),
+        )
+        # Turn context contains an extra message that the snapshot dropped
+        turn_ctx = make_turn_context(
+            (("kept-1", "user", "Kept"), ("dropped-2", "assistant", "Dropped"))
+        )
+
+        ctx = session._build_replacement_context(turn_ctx, snapshot)
+        contents = [item.text_content or "" for item in ctx.items]
+
+        assert any("Kept" in c for c in contents)
+        assert not any("Dropped" in c for c in contents)
 
 
 # ======================================================================
@@ -363,7 +417,7 @@ class TestDurableMemoryReachesLLMContext:
 
         # Convert to LiveKit context
         session = AssistantSession()
-        ctx = session._snapshot_to_chat_context(snapshot)
+        ctx = session._build_replacement_context(make_turn_context(), snapshot)
         contents = [item.text_content or "" for item in ctx.items]
 
         # Verify memory appears in developer message
@@ -411,7 +465,7 @@ class TestProjectContextReachesLLMContext:
 
         # Convert to LiveKit context
         session = AssistantSession()
-        ctx = session._snapshot_to_chat_context(snapshot)
+        ctx = session._build_replacement_context(make_turn_context(), snapshot)
         contents = [item.text_content or "" for item in ctx.items]
 
         # Verify project context appears
@@ -468,59 +522,203 @@ class TestBudgetedContextReplacesHistory:
 # ======================================================================
 
 class TestToolItemsPreservation:
-    """Test how FunctionCall / FunctionCallOutput items are handled.
+    """Test that FunctionCall / FunctionCallOutput items are preserved as
+    native LiveKit items in the replacement context — never flattened into
+    ordinary text, never silently dropped.
 
-    This is the critical blocker check - if we can't preserve these
-    without silently converting/discarding, we must report it.
+    This is the critical blocker check for M7.1a.
     """
 
-    def test_function_call_output_items_in_turn_ctx(self):
-        """Verify that FunctionCall/FunctionCallOutput in turn_ctx.messages()
-        are handled correctly - they are filtered out by messages() method
-        which only returns ChatMessage items.
-        """
+    def _turn_with_tool_history(self):
         from livekit.agents.llm import (
             ChatContext,
-            ChatMessage,
             FunctionCall,
             FunctionCallOutput,
         )
 
-        ctx = ChatContext.empty()
-        ctx.add_message(role="user", content=["Hello"])
-        ctx.add_message(role="assistant", content=["I'll help"])
+        turn_ctx = ChatContext.empty()
+        turn_ctx.add_message(role="user", content=["Hello"])
+        turn_ctx.add_message(role="assistant", content=["Let me read it"])
 
-        # Add a function call
-        fc = FunctionCall(call_id="call-1", name="read_file", arguments='{"path": "/tmp/test.txt"}')
-        ctx.insert(fc)
+        fc = FunctionCall(call_id="call-1", name="read_file", arguments='{"path": "/tmp/x.txt"}')
+        fco = FunctionCallOutput(call_id="call-1", name="read_file", output="File content here", is_error=False)
+        turn_ctx.insert(fc)
+        turn_ctx.insert(fco)
 
-        # Add function call output
-        fco = FunctionCallOutput(call_id="call-1", name="read_file", output="File content", is_error=False)
-        ctx.insert(fco)
+        msgs = turn_ctx.messages()
+        msgs[0].id = "msg-1"
+        msgs[1].id = "msg-2"
+        return turn_ctx, fc, fco
 
-        # messages() filters to ChatMessage only
-        messages = ctx.messages()
-        assert len(messages) == 2
-        assert all(isinstance(m, ChatMessage) for m in messages)
+    def test_function_call_and_output_preserved_as_native_items(self):
+        turn_ctx, _fc, _fco = self._turn_with_tool_history()
 
-        # FunctionCall and FunctionCallOutput are NOT in messages()
-        # This means our conversion loses tool history
-        # The ContextManager only sees user/assistant messages
+        snapshot = make_snapshot(
+            system_instructions="System",
+            recent_messages=(("msg-1", "user", "Hello"), ("msg-2", "assistant", "Let me read it")),
+        )
 
-    def test_current_contextmanager_does_not_see_tool_calls(self):
-        """Confirm that ContextManager's recent_messages (from turn_ctx.messages())
-        does NOT include FunctionCall/FunctionCallOutput items.
-        """
-        # This is the current behavior - tool calls are filtered out by
-        # ChatContext.messages() which only returns ChatMessage items.
-        #
-        # IMPLICATION: The LLM will NOT see tool call history in the
-        # assembled context unless we explicitly preserve it.
-        #
-        # This is a known limitation that should be documented.
-        # For M7.1a, we accept this - the LLM sees the conversation
-        # without tool calls. Tool execution still works because tools
-        # are passed separately to llm.chat().
+        session = AssistantSession()
+        ctx = session._build_replacement_context(turn_ctx, snapshot)
+
+        types = [item.type for item in ctx.items]
+        assert "function_call" in types
+        assert "function_call_output" in types
+
+        fc_items = [i for i in ctx.items if i.type == "function_call"]
+        fco_items = [i for i in ctx.items if i.type == "function_call_output"]
+        assert len(fc_items) == 1
+        assert len(fco_items) == 1
+        assert fc_items[0].name == "read_file"
+        assert fc_items[0].call_id == "call-1"
+        assert '{"path": "/tmp/x.txt"}' in fc_items[0].arguments
+        assert fco_items[0].output == "File content here"
+        assert fco_items[0].is_error is False
+
+    def test_tool_calls_not_flattened_into_text(self):
+        """Tool call details must not leak into message text."""
+        turn_ctx, _fc, _fco = self._turn_with_tool_history()
+
+        snapshot = make_snapshot(
+            system_instructions="System",
+            recent_messages=(("msg-1", "user", "Hello"), ("msg-2", "assistant", "Let me read it")),
+        )
+
+        session = AssistantSession()
+        ctx = session._build_replacement_context(turn_ctx, snapshot)
+
+        message_text = " ".join(item.text_content or "" for item in ctx.items if item.type == "message")
+        assert "call-1" not in message_text
+        assert "read_file" not in message_text
+        assert "/tmp/x.txt" not in message_text
+
+    def test_tool_item_ordering_preserved(self):
+        """FunctionCall must precede its FunctionCallOutput in the context."""
+        turn_ctx, fc, fco = self._turn_with_tool_history()
+
+        snapshot = make_snapshot(
+            system_instructions="System",
+            recent_messages=(("msg-1", "user", "Hello"), ("msg-2", "assistant", "Let me read it")),
+        )
+
+        session = AssistantSession()
+        ctx = session._build_replacement_context(turn_ctx, snapshot)
+
+        assert ctx.items.index(fc) < ctx.items.index(fco)
+
+    def test_durable_memory_still_reaches_context_with_tool_history(self):
+        """Memory section coexists with preserved tool items."""
+        turn_ctx, _fc, _fco = self._turn_with_tool_history()
+
+        snapshot = make_snapshot(
+            system_instructions="System",
+            recent_messages=(("msg-1", "user", "Hello"), ("msg-2", "assistant", "Let me read it")),
+            durable_memories=(make_memory("User prefers Vim.", "mem-1"),),
+        )
+
+        session = AssistantSession()
+        ctx = session._build_replacement_context(turn_ctx, snapshot)
+
+        contents = [item.text_content or "" for item in ctx.items if item.type == "message"]
+        assert any("User prefers Vim." in c for c in contents)
+        assert any(item.type == "function_call" for item in ctx.items)
+
+
+# ======================================================================
+# Test: In-Place Application on Turn Context
+# ======================================================================
+
+class TestInPlaceApplication:
+    """Test that assemble_context_for_turn applies the context to turn_ctx
+    in place — LiveKit consumes this exact context for the LLM call."""
+
+    def _build_session(self, memories: list[Memory] | None = None, project: ProjectContext | None = None):
+        session = AssistantSession()
+        fake_memory = FakeMemoryProvider(memories=memories)
+        fake_project = FakeProjectProvider(context=project)
+        session._context_manager = ContextManager(
+            memory_manager=fake_memory,
+            project_context_provider=fake_project,
+            shrinker=None,
+        )
+        return session, fake_memory, fake_project
+
+    def test_turn_ctx_items_replaced_with_budgeted_context(self):
+        from livekit.agents.llm import ChatMessage
+
+        session, _fm, _fp = self._build_session(
+            memories=[make_memory("User prefers Vim.", "mem-1")]
+        )
+
+        turn_ctx = make_turn_context(
+            (("msg-1", "user", "Hello"), ("msg-2", "assistant", "Hi!"))
+        )
+        new_message = ChatMessage(role="user", content=["What editor?"])
+
+        custom = session.assemble_context_for_turn(turn_ctx, new_message)
+
+        # Applied in place
+        assert turn_ctx.items is custom.items
+
+        roles = [item.role for item in turn_ctx.items]
+        contents = [item.text_content or "" for item in turn_ctx.items if item.type == "message"]
+
+        # System instructions present exactly once
+        assert roles.count("system") == 1
+        assert any("F.R.I.D.A.Y." in c for c in contents)
+
+        # Recent messages kept
+        assert any("Hello" in c for c in contents)
+        assert any("Hi!" in c for c in contents)
+
+        # Durable memory present
+        assert any("User prefers Vim." in c for c in contents)
+
+    def test_current_user_message_added_exactly_once_by_livekit(self):
+        """LiveKit inserts new_message into the LLM-call context after this
+        hook. Simulating that insert must yield exactly one copy."""
+        from livekit.agents.llm import ChatMessage
+
+        session, _fm, _fp = self._build_session()
+        turn_ctx = make_turn_context((("msg-1", "user", "Hello"),))
+        new_message = ChatMessage(role="user", content=["What editor?"])
+
+        session.assemble_context_for_turn(turn_ctx, new_message)
+
+        # FRIDAY must NOT add the current message
+        contents = [item.text_content or "" for item in turn_ctx.items]
+        assert not any("What editor?" in c for c in contents)
+
+        # LiveKit inserts it for the LLM call (agent_activity line ~3046)
+        turn_ctx.insert(new_message)
+        contents = [item.text_content or "" for item in turn_ctx.items]
+        assert contents.count("What editor?") == 1
+
+    def test_system_instructions_appear_once(self):
+        from livekit.agents.llm import ChatMessage
+
+        session, _fm, _fp = self._build_session()
+        turn_ctx = make_turn_context((("msg-1", "user", "Hello"),))
+
+        new_message = ChatMessage(role="user", content=["Hi"])
+        session.assemble_context_for_turn(turn_ctx, new_message)
+
+        roles = [item.role for item in turn_ctx.items]
+        assert roles.count("system") == 1
+
+    def test_no_background_work_spawned(self):
+        """assemble_context_for_turn must be synchronous — no asyncio tasks."""
+        import asyncio
+
+        from livekit.agents.llm import ChatMessage
+
+        session, _fm, _fp = self._build_session()
+        turn_ctx = make_turn_context((("msg-1", "user", "Hello"),))
+        new_message = ChatMessage(role="user", content=["Hi"])
+
+        coroutine = session.assemble_context_for_turn(turn_ctx, new_message)
+        # Sync call — returns a ChatContext, not a coroutine
+        assert not asyncio.iscoroutine(coroutine)
 
 
 # ======================================================================
@@ -636,46 +834,100 @@ class TestLiveKitLLMPathUnchanged:
 
 
 # ======================================================================
-# Integration Test: Memory → ContextManager → LiveKit Context → Fake LLM
+# Integration Test: Memory + Tool History → Context → Fake LLM
 # ======================================================================
 
-class TestIntegrationMemoryToLLM:
-    """End-to-end integration test with fake LLM."""
+class FakeLLM:
+    """Fake LiveKit LLM: records the ChatContext it receives via chat()."""
 
-    def test_seed_memory_assemble_context_fake_llm_sees_it(self):
-        """Full integration: seed memory → assemble → fake LLM receives it."""
-        # 1. Seed durable memory
-        mem = make_memory("User prefers Vim.", "mem-1")
-        fake_memory = FakeMemoryProvider(memories=[mem])
-        fake_project = FakeProjectProvider()
+    def __init__(self) -> None:
+        self.received: list[object] = []
 
-        # 2. Create ContextManager
-        cm = ContextManager(
+    def chat(self, chat_ctx, *, tools=None, **kwargs):
+        self.received.append(chat_ctx)
+        return []
+
+
+class TestIntegrationMemoryAndToolsToLLM:
+    """End-to-end: memory + tool history reach the context the LLM consumes."""
+
+    def test_fake_llm_receives_budgeted_context_with_memory(self):
+        from livekit.agents.llm import ChatMessage
+
+        session = AssistantSession()
+        fake_memory = FakeMemoryProvider(memories=[make_memory("User prefers Vim.", "mem-1")])
+        fake_project = FakeProjectProvider(
+            context=ProjectContext(context_md="Project: PostLeaf", state_json="", facts_md="", decisions_md="")
+        )
+        session._context_manager = ContextManager(
             memory_manager=fake_memory,
             project_context_provider=fake_project,
             shrinker=None,
         )
 
-        # 3. Simulate user turn
-        snapshot = cm.assemble(
-            system_instructions="You are FRIDAY.",
-            current_user_message="What editor do I prefer?",
-            recent_messages=(("m1", "user", "What editor do I prefer?"),),
-            conversation_id="conv-1",
-            active_project_id=None,
+        # LiveKit hands on_user_turn_completed a copy of agent.chat_ctx that
+        # does NOT include the current user message.
+        turn_ctx = make_turn_context((("msg-1", "user", "Hello"),))
+        new_message = ChatMessage(role="user", content=["What editor?"])
+
+        session.assemble_context_for_turn(turn_ctx, new_message)
+
+        # Simulate LiveKit inserting the current user message into the
+        # LLM-call context (agent_activity._pipeline_reply_task_impl).
+        turn_ctx.insert(new_message)
+
+        llm = FakeLLM()
+        # The pipeline consumes turn_ctx exactly as we left it.
+        llm.chat(turn_ctx)
+
+        assert len(llm.received) == 1
+        contents = " ".join(item.text_content or "" for item in llm.received[0].items if item.type == "message")
+        assert "F.R.I.D.A.Y." in contents
+        assert "User prefers Vim." in contents
+        assert "Project: PostLeaf" in contents
+
+        # Current user message appears exactly once
+        assert contents.count("What editor?") == 1
+
+    def test_fake_llm_receives_native_tool_history(self):
+        from livekit.agents.llm import ChatMessage, FunctionCall, FunctionCallOutput
+
+        session = AssistantSession()
+        fake_memory = FakeMemoryProvider()
+        fake_project = FakeProjectProvider()
+        session._context_manager = ContextManager(
+            memory_manager=fake_memory,
+            project_context_provider=fake_project,
+            shrinker=None,
         )
 
-        # 4. Build LiveKit context
-        session = AssistantSession()
-        custom_ctx = session._snapshot_to_chat_context(snapshot)
+        turn_ctx = make_turn_context((("msg-1", "user", "Please inspect the file"),))
+        fc = FunctionCall(call_id="call-1", name="read_file", arguments='{"path": "/tmp/x"}')
+        fco = FunctionCallOutput(call_id="call-1", name="read_file", output="File content", is_error=False)
+        turn_ctx.insert(fc)
+        turn_ctx.insert(fco)
+        turn_ctx.add_message(role="assistant", content=["Here it is."])
+        msgs = turn_ctx.messages()
+        msgs[0].id = "msg-1"
+        msgs[1].id = "msg-2"
 
-        # Verify the context contains the memory
-        contents = " ".join(item.text_content or "" for item in custom_ctx.items)
-        assert "Vim" in contents
-        assert "User prefers Vim" in contents
+        new_message = ChatMessage(role="user", content=["Read /tmp/x"])
+        session.assemble_context_for_turn(turn_ctx, new_message)
+        turn_ctx.insert(new_message)
 
-        # The fake LLM would see this context when chat() is called
-        # This proves the memory reaches the LLM
+        llm = FakeLLM()
+        llm.chat(turn_ctx)
+
+        assert len(llm.received) == 1
+        received = llm.received[0]
+        types = [item.type for item in received.items]
+        assert "function_call" in types
+        assert "function_call_output" in types
+        # Tool history preserved as native items, not text
+        message_text = " ".join(
+            item.text_content or "" for item in received.items if item.type == "message"
+        )
+        assert "call-1" not in message_text
 
 
 # ======================================================================

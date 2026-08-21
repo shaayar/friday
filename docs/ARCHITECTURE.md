@@ -217,12 +217,11 @@ Project information should eventually feed the project workspace/context layer r
 
 This is architectural direction only. The extraction algorithm, LLM model, and database schema are intentionally not defined.
 
-**Conversation Compaction and Progressive Disclosure (future direction)**
+**Conversation Compaction and Progressive Disclosure**
 
 A post-Phase-3 refinement proposes moving historical-conversation
 handling from per-request runtime shrinking toward threshold-triggered,
-background, persistent conversation compaction. This is a proposed future
-architecture, not an implemented behavior.
+background, persistent conversation compaction. This is now implemented behavior (M7.1b.4).
 
 A strict distinction is maintained between:
 
@@ -236,9 +235,9 @@ Skills                  → how FRIDAY performs an operation
 Knowledge blocks        → what FRIDAY knows about a subject/project
 ```
 
-Intended direction (approximate; package boundaries not locked):
+Implemented direction (package boundaries locked in `friday/compaction/`):
 
-```
+```text
 Raw conversation
     ↓
 ConversationCompactor
@@ -288,7 +287,43 @@ regenerable indexes/caches of meaning.
 See:
 
 - `DECISION_LOG.md` — ADR-024, ADR-025
-- `FRIDAY_BUILD_LOG.md` — §42
+- `FRIDAY_BUILD_LOG.md` — §61
+
+---
+
+### Runtime Promotion Trigger (M7.1b.4)
+
+The live runtime now executes promotion as a discrete background step strictly after successful compaction persistence:
+
+```text
+assistant message persisted
+        │
+        ├── memory extraction (independent background task)
+        │
+        └── compaction (independent background task)
+                │
+                ▼
+        persisted compaction
+                │
+                ▼
+        promotion background task
+                │
+                ▼
+             memory.db
+```
+
+Key architectural boundaries:
+
+- Memory extraction and compaction are independent background tasks (both scheduled via `AssistantSession._schedule_background`).
+- Promotion is downstream of successful compaction persistence only.
+- Promotion does not mutate conversation history.
+- Promotion does not modify ContextManager.
+- No cross-database transaction exists.
+- Promotion ledger lives in `conversations.db`.
+- Durable memories live in `memory.db`.
+
+Reference ADR-025 for the full policy: category promotion rules, `EXPLICIT` confidence assignment, deterministic `project_id` from the caller, idempotent ledger, failure isolation, and atomic memory batch
+application.
 
 ---
 
@@ -579,6 +614,294 @@ memory/compaction systems through explicit pipelines (not implemented now).
 
 Locked principles and open implementation details are separated in
 DECISION_LOG.md ADR-026 (`docs/ADR-026.md`).
+
+---
+
+### 16b. M7 → M8 Architectural Boundary
+
+M7 establishes the FRIDAY **assistant-runtime foundation**:
+
+```text
+conversation persistence
+        ↓
+context assembly
+        ↓
+memory extraction
+        ↓
+compaction
+        ↓
+optional durable-memory promotion
+```
+
+M8 builds the **agent-orchestration layer** on top of this foundation.
+
+Orchestration must consume these systems through defined interfaces rather than merging their responsibilities.
+
+Preserve the separation between:
+
+- conversation state
+- context state
+- durable memory
+- compaction state
+- promotion state
+- task/execution state
+- agent state
+
+The architecture communicates:
+
+```text
+Memory ≠ Context
+Context ≠ Compaction
+Compaction ≠ Durable Memory
+Promotion ≠ Compaction
+Task execution ≠ Memory
+```
+
+No Task model or execution schema is introduced here. M8 design is deferred
+to the future orchestration phase.
+
+---
+
+### 16c. M7 / M8 Responsibility Summary
+
+| M7 (Assistant Runtime Foundation) | M8 (Agent Orchestration Layer) |
+|-----------------------------------|--------------------------------|
+| Conversation persistence          | Task understanding             |
+| Context assembly                  | Task planning                  |
+| Memory extraction                 | Agent selection                |
+| Memory resolution                 | Delegation                     |
+| Compaction                        | Worker execution               |
+| Promotion                         | Independent verification       |
+| Background lifecycle              | Retry / reassignment / escalation |
+|                                   | Permissioned local-machine actions |
+
+M8 must NOT absorb M7 responsibilities. M8 orchestrates work using M7 capabilities as dependencies.
+
+---
+
+### 16d. M8 Master Agent Orchestration Roadmap
+
+M8 implements the **master agent orchestration layer** on top of the M7 assistant-runtime foundation.
+
+Overall direction:
+
+```text
+                    FRIDAY
+                 MASTER AGENT
+                  ORCHESTRATOR
+                       │
+             understand → plan
+                       │
+                       ▼
+                select worker
+                       │
+             ┌─────────┴─────────┐
+             ▼                   ▼
+         OpenCode             Hermes
+             │                   │
+             └─────────┬─────────┘
+                       ▼
+                    result
+                       │
+                       ▼
+                independent verifier
+                       │
+              ┌────────┼────────┐
+              ▼        ▼        ▼
+            PASS      FAIL   NEEDS_REVIEW
+              │        │        │
+              ▼        ▼        ▼
+           accept    retry/   escalate
+                     reassign
+```
+
+Workers remain bounded execution systems. FRIDAY remains responsible for orchestration and acceptance. The verifier remains independent from the worker. M7 subsystems remain separate.
+
+#### M8 Phases
+
+| Phase | Goal | Status |
+|-------|------|--------|
+| **M8.1** | Single-Worker Orchestration Foundation | NOT STARTED |
+| **M8.2** | Multi-Worker Orchestration | FUTURE |
+| **M8.3** | Task State & Reliability | FUTURE |
+| **M8.4** | Permissioned Local Machine Control | FUTURE |
+| **M8.5** | Advanced Orchestration | FUTURE |
+| **M8.6** | Local Intelligence | FUTURE |
+
+---
+
+#### M8.1 — Single-Worker Orchestration Foundation
+
+Goal: Build the smallest complete orchestration loop using one worker.
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| M8.1.1 | Task Contract domain model | NOT STARTED |
+| M8.1.2 | In-memory Agent Registry | NOT STARTED |
+| M8.1.3 | Worker Adapter protocol + OpenCode adapter | NOT STARTED |
+| M8.1.4 | Deterministic Verifier | NOT STARTED |
+| M8.1.5 | Orchestration Loop | NOT STARTED |
+| M8.1.6 | Retry & Escalation | NOT STARTED |
+| M8.1.7 | M8.1 Integration & Verification | NOT STARTED |
+
+**M8.1 Scope:**
+
+- One hard-coded worker (OpenCode adapter selected for M8.1 implementation)
+- In-memory registry, no persistence
+- Synchronous execution
+- Deterministic verifier only
+- Runtime-only task state
+- Zero automatic memory writes
+- One retry, escalate after failure
+
+**M8.1 Explicitly Defers:**
+
+- Hermes integration
+- Persistent task state
+- Reassignment
+- Local machine control
+- LLM verifier
+- Scheduler
+- Multi-worker selection
+
+---
+
+#### M8.2 — Multi-Worker Orchestration
+
+Goal: Move from one worker to multiple bounded workers.
+
+Planned milestones (all FUTURE, no schemas locked):
+
+- M8.2.1 — Hermes Adapter
+- M8.2.2 — Capability-Based Agent Selection
+- M8.2.3 — Reassignment
+- M8.2.4 — Worker Health / Availability
+- M8.2.5 — Multi-Worker Verification
+- M8.2.6 — Integration & Failure Testing
+
+Exact health checks, retry counts, selection algorithms, and persistence remain OPEN until their milestone readiness reviews.
+
+---
+
+#### M8.3 — Task State & Reliability
+
+Goal: Make orchestration resilient beyond a single in-memory task.
+
+Potential milestones (all FUTURE):
+
+- M8.3.1 — Execution State Model
+- M8.3.2 — Task Lifecycle
+- M8.3.3 — Task/Result Persistence
+- M8.3.4 — Restart Recovery
+- M8.3.5 — Retry/Reconciliation
+- M8.3.6 — Concurrency Control
+- M8.3.7 — Integration & Recovery Testing
+
+**Hard boundaries:** Do NOT place task state in memory.db. Do NOT place task state in compaction tables. Persistence architecture remains OPEN until M8.3 readiness review.
+
+---
+
+#### M8.4 — Permissioned Local Machine Control
+
+Goal: Allow FRIDAY to perform bounded local actions through explicit tools.
+
+Planned milestones (all FUTURE):
+
+- M8.4.1 — Tool Permission Model
+- M8.4.2 — File Operations
+- M8.4.3 — Command Execution
+- M8.4.4 — Network Permissions
+- M8.4.5 — Approval Boundaries
+- M8.4.6 — Sandboxing / Isolation
+- M8.4.7 — Audit Logging
+- M8.4.8 — Security Verification
+
+**Hard boundary:** NO unrestricted shell. Local-machine capabilities must be explicit, permissioned, bounded, and auditable. NOT implemented in M8.1.
+
+---
+
+#### M8.5 — Advanced Orchestration
+
+Longer-term direction (FUTURE, no locked design):
+
+- Multi-step task planning
+- Task decomposition
+- Agent-to-agent delegation
+- Parallel workers
+- Dependency-aware execution
+- Richer verifier strategies
+- Human-in-the-loop approval
+- Scheduling
+- Long-running tasks
+
+No implementation schemas defined yet.
+
+---
+
+#### M8.6 — Local Intelligence
+
+Aligned with FUTURE_IDEAS.md. Potential lightweight models for:
+
+- Task routing
+- Memory classification
+- Fact/category classification
+- Relevance scoring
+- Routine compaction decisions
+- Result classification
+- Model selection
+
+Hierarchy:
+```text
+deterministic rules
+        ↓
+small local ML
+        ↓
+main reasoning model
+```
+
+No model architecture selected. Candidates include logistic regression, decision trees, small neural networks, other lightweight classifiers/rankers. Do NOT connect to M8.1.
+
+---
+
+### 16e. M8.1 Decision State
+
+| Decision | Status |
+|----------|--------|
+| FRIDAY as master orchestrator | LOCKED (ADR-026) |
+| Bounded delegation | LOCKED (ADR-026) |
+| Independent verifier | LOCKED (ADR-026) |
+| Verification against acceptance criteria | LOCKED (ADR-026) |
+| Adapter/registry architecture | LOCKED (ADR-026) |
+| No unrestricted shell | LOCKED (ADR-026) |
+| Subsystem separation | LOCKED (ADR-026 + §16b) |
+| Single-task M8.1 milestone | REQUIRED FOR M8.1 |
+| OpenCode adapter for M8.1 | REQUIRED FOR M8.1 |
+| In-memory Agent Registry | REQUIRED FOR M8.1 |
+| Synchronous execution | REQUIRED FOR M8.1 |
+| Deterministic verifier | REQUIRED FOR M8.1 |
+| Runtime-only task state | REQUIRED FOR M8.1 |
+| Zero automatic memory writes | REQUIRED FOR M8.1 |
+| No new database | REQUIRED FOR M8.1 |
+| Exact TaskContract schema | OPEN |
+| Repository/workspace representation | OPEN |
+| Adapter internals / execution protocol | OPEN |
+| Verifier implementation details | OPEN |
+| Evidence model | OPEN |
+| Permission model | OPEN |
+| Worker health model | OPEN |
+| Persistence model | OPEN |
+| Hermes integration | FUTURE (M8.2) |
+| Multi-worker selection | FUTURE (M8.2) |
+| Reassignment | FUTURE (M8.2) |
+| Persistent task state | FUTURE (M8.3) |
+| Local machine control | FUTURE (M8.4) |
+| LLM verifier | FUTURE (M8.5) |
+| Agent-to-agent delegation | FUTURE (M8.5) |
+| Scheduler | FUTURE (M8.5) |
+| Advanced planning | FUTURE (M8.5) |
+| Tiny/local ML | FUTURE (M8.6) |
+
+**IMPORTANT:** ADR-026 describes OpenCode and Hermes as "initial candidate workers" not permanent dependencies. OpenCode selection for M8.1 is an M8.1 implementation milestone decision, not an ADR-026 strengthening.
 
 ---
 

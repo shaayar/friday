@@ -75,7 +75,7 @@ class ConversationCompactionExtractor:
         self._llm = llm
         self._compaction_version = compaction_version
 
-    def extract(
+    async def extract(
         self,
         messages: Sequence[_Message],
         *,
@@ -95,7 +95,7 @@ class ConversationCompactionExtractor:
         last_message_id = max(message.id for message in messages)
 
         try:
-            raw = self._llm.complete(_SYSTEM_PROMPT, transcript)
+            raw = await self._llm.complete(_SYSTEM_PROMPT, transcript)
         except Exception as exc:  # provider boundary; surface as typed error
             raise CompactionProviderError(f"LLM call failed: {exc}") from exc
 

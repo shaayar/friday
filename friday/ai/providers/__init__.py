@@ -1,10 +1,12 @@
 import logging
 import os
 
+from livekit.agents.llm import ChatContext, ChatMessage
 from livekit.plugins import groq as lk_groq
 from livekit.plugins import openai as lk_openai
 from livekit.plugins import sarvam
 
+from friday.ai.backend import LLMBackend
 from friday.config import config
 
 logger = logging.getLogger("friday-agent")
@@ -39,6 +41,35 @@ def build_llm():
         return lk_openai.LLM(model=config.OLLAMA_LLM_MODEL)
     else:
         raise ValueError(f"Unknown LLM_PROVIDER: {config.LLM_PROVIDER!r}")
+
+
+class LiveKitLLMBackend(LLMBackend):
+    """Production adapter from a configured LiveKit LLM to :class:`LLMBackend`.
+
+    The wrapped LiveKit ``chat()`` is synchronous and returns an async
+    ``LLMStream``; ``collect()`` yields the fully-received completion. The
+    ``system`` prompt and ``user`` transcript are sent as a minimal two-message
+    ``ChatContext`` so the same provider family powers the runtime conversation
+    and the background memory/compaction pipelines.
+    """
+
+    def __init__(self, llm) -> None:
+        self._llm = llm
+
+    async def complete(self, system: str, user: str) -> str:
+        ctx = ChatContext(
+            items=[
+                ChatMessage(role="system", content=[system]),
+                ChatMessage(role="user", content=[user]),
+            ]
+        )
+        response = await self._llm.chat(chat_ctx=ctx).collect()
+        return response.text
+
+
+def build_llm_backend() -> LiveKitLLMBackend:
+    """Build the production :class:`LLMBackend` for the configured provider."""
+    return LiveKitLLMBackend(build_llm())
 
 
 def build_tts():

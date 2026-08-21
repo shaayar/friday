@@ -9,7 +9,7 @@ manager isolates any failure.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Sequence
 
 from friday.ai.backend import LLMBackend
 from friday.context.models import Message
@@ -49,6 +49,18 @@ class ContextShrinker:
         except Exception as exc:
             logger.warning("Context compression failed: %s", exc)
             raise RuntimeError(f"context compression failed: {exc}") from exc
+
+        if isinstance(raw, Awaitable):
+            # The protocol is async, but this path is synchronous and never
+            # given an async backend in production. Close the coroutine
+            # rather than leaking it.
+            raw.close()
+            # Keep RuntimeError for consistency with the module's established
+            # failure contract (callers isolate it); the protocol change is
+            # documented at friday/ai/backend.py.
+            raise RuntimeError(  # noqa: TRY004 - consistent with shrink() contract
+                "context compression backend is async; synchronous use is unsupported"
+            )
 
         result = raw.strip() if raw else ""
         if not result:

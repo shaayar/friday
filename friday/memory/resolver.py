@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable
 from difflib import SequenceMatcher
 
 from friday.ai.backend import LLMBackend
@@ -270,6 +271,13 @@ class MemoryResolver:
             raw = self._llm.complete(system, user)
         except Exception:  # noqa: BLE001 - advisory path must never break extraction
             logger.warning("LLM advisory resolution failed; rejecting conservatively")
+            return None
+        if isinstance(raw, Awaitable):
+            # The protocol is async, but this best-effort path is synchronous
+            # and is never given an async backend in production. Close the
+            # coroutine rather than leaking it.
+            raw.close()
+            logger.warning("LLM advisory backend is async; skipping advisory step")
             return None
         return self._parse_llm_decision(raw, candidate, relevant)
 

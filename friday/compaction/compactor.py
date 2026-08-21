@@ -86,7 +86,7 @@ class ConversationCompactor:
         self._max_window = max_window
         self._unit_threshold = unit_threshold
 
-    def compact(
+    async def compact(
         self,
         messages: Sequence[Message],
         *,
@@ -125,7 +125,7 @@ class ConversationCompactor:
                 compacted=False, compaction=None, remaining_messages=eligible_count
             )
 
-        compaction = self._extractor.extract(window, conversation_id=conversation_id)
+        compaction = await self._extractor.extract(window, conversation_id=conversation_id)
         try:
             self._store.save(compaction)
         except CompactionAlreadyExistsError:

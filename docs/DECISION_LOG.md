@@ -843,6 +843,17 @@ Future considerations:
 
 ---
 
+### ADR-024 Status Update (Post-M7)
+
+ADR-024 proposed the compaction subsystem as future direction. As of M7.1b.4, the compaction subsystem is fully implemented in `friday/compaction/` and wired into the live runtime (`AssistantSession`). The promotion path defined by ADR-025 is also implemented and running.
+
+The remaining items from the ADR-024 "Drawbacks" section that remain OPEN:
+
+- Exact context-degradation algorithm remains undecided (may simplify or eliminate runtime `ContextShrinker` in normal operation)
+- Knowledge-block schema, retrieval mechanism, and progressive-disclosure metadata remain OPEN
+
+---
+
 ## ADR-025 — Compaction Memory Promotion
 
 **Status**

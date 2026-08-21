@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from dataclasses import dataclass
 
@@ -45,7 +46,7 @@ class FakeLLM:
         self.last_user: str | None = None
         self.calls = 0
 
-    def complete(self, system: str, user: str) -> str:
+    async def complete(self, system: str, user: str) -> str:
         self.calls += 1
         self.last_system = system
         self.last_user = user
@@ -53,14 +54,14 @@ class FakeLLM:
 
 
 class RaisingLLM:
-    def complete(self, system: str, user: str) -> str:
+    async def complete(self, system: str, user: str) -> str:
         raise RuntimeError("provider down")
 
 
 def extract(compaction_json: str, *, conversation_id: int = 1, llm: FakeLLM | RaisingLLM | None = None):
     fake = llm if llm is not None else FakeLLM(compaction_json)
     extractor = ConversationCompactionExtractor(fake)
-    result = extractor.extract(window(1, 2, 3, 4), conversation_id=conversation_id)
+    result = asyncio.run(extractor.extract(window(1, 2, 3, 4), conversation_id=conversation_id))
     return result, fake
 
 
@@ -204,7 +205,7 @@ class TestRangeDerivation:
     def test_first_last_derived_from_input_not_llm(self) -> None:
         json_text = """{"summary": "S.", "first_message_id": 100, "last_message_id": 200, "facts": [], "decisions": [], "changes": [], "open_questions": []}"""
         extractor = ConversationCompactionExtractor(FakeLLM(json_text))
-        result = extractor.extract(window(7, 8, 9), conversation_id=3)
+        result = asyncio.run(extractor.extract(window(7, 8, 9), conversation_id=3))
         assert result.first_message_id == 7
         assert result.last_message_id == 9
         assert result.conversation_id == 3
@@ -212,14 +213,14 @@ class TestRangeDerivation:
     def test_empty_input_window_rejected(self) -> None:
         extractor = ConversationCompactionExtractor(FakeLLM(VALID_JSON))
         with pytest.raises(ValueError):
-            extractor.extract((), conversation_id=1)
+            asyncio.run(extractor.extract((), conversation_id=1))
 
 
 class TestFailures:
     def test_llm_raises_exception(self) -> None:
         extractor = ConversationCompactionExtractor(RaisingLLM())
         with pytest.raises(CompactionProviderError):
-            extractor.extract(window(1, 2, 3), conversation_id=1)
+            asyncio.run(extractor.extract(window(1, 2, 3), conversation_id=1))
 
     def test_llm_returns_empty_output(self) -> None:
         with pytest.raises(CompactionOutputError):

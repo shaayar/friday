@@ -24,7 +24,7 @@ from livekit.agents.voice import Agent, AgentSession
 from livekit.plugins import silero
 
 from friday.ai.prompts import load_system_prompt
-from friday.ai.providers import build_llm, build_stt, build_tts
+from friday.ai.providers import build_llm, build_llm_backend, build_stt, build_tts
 from friday.config import config
 from friday.core.session import AssistantSession, create_assistant_session
 
@@ -173,8 +173,9 @@ async def entrypoint(ctx: JobContext) -> None:
     llm = build_llm()
     tts = build_tts()
 
-    # Create and start AssistantSession (owns stores, managers, context)
-    assistant_session = await create_assistant_session()
+    # Create and start AssistantSession (owns stores, managers, context, and
+    # the production LLM backend powering memory/compaction pipelines)
+    assistant_session = await create_assistant_session(llm_backend=build_llm_backend())
 
     # Store in session userdata for event handlers
     session = AgentSession(
@@ -205,6 +206,9 @@ async def entrypoint(ctx: JobContext) -> None:
         elif item.role == "assistant":
             mem.save_message(conv_id, "assistant", text)
             logger.debug("Persisted assistant message: %s...", text[:50])
+            # Schedule post-turn memory extraction and compaction evaluation
+            # as tracked background tasks owned by the AssistantSession.
+            session.userdata["assistant_session"].on_assistant_persisted()
 
     session.on("conversation_item_added", _on_conversation_item_added)
 
