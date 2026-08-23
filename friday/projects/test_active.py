@@ -22,7 +22,9 @@ def env(tmp_path: Path) -> SimpleNamespace:
     registry = ProjectRegistry(tmp_path / "registry.json")
     detector = ProjectDetector(registry)
     active = ActiveProjectManager(tmp_path / "active_project.json", registry, detector)
-    return SimpleNamespace(registry=registry, detector=detector, active=active, tmp=tmp_path)
+    return SimpleNamespace(
+        registry=registry, detector=detector, active=active, tmp=tmp_path
+    )
 
 
 @pytest.fixture
@@ -43,7 +45,9 @@ def test_activate_sets_explicit(env: SimpleNamespace, project: str) -> None:
 def test_activate_persists(env: SimpleNamespace, project: str) -> None:
     env.active.activate(project)
 
-    reloaded = ActiveProjectManager(env.tmp / "active_project.json", env.registry, env.detector)
+    reloaded = ActiveProjectManager(
+        env.tmp / "active_project.json", env.registry, env.detector
+    )
     assert reloaded.get() is not None
     assert reloaded.get().project_id == project
     assert reloaded.get().source == EXPLICIT
@@ -54,7 +58,9 @@ def test_activate_unknown_project_raises(env: SimpleNamespace) -> None:
         env.active.activate("does-not-exist")
 
 
-def test_explicit_active_survives_cwd_changes(env: SimpleNamespace, project: str) -> None:
+def test_explicit_active_survives_cwd_changes(
+    env: SimpleNamespace, project: str
+) -> None:
     env.active.activate(project)
     outside = env.tmp / "elsewhere"
     outside.mkdir()
@@ -92,7 +98,9 @@ def test_reconcile_outside_all_roots_clears(env: SimpleNamespace, project: str) 
     assert env.active.get() is None
 
 
-def test_clear_falls_back_to_detection(env: SimpleNamespace, project: str, tmp_path: Path) -> None:
+def test_clear_falls_back_to_detection(
+    env: SimpleNamespace, project: str, tmp_path: Path
+) -> None:
     root = tmp_path / "project"
     sub = root / "src"
     sub.mkdir(parents=True)
@@ -105,7 +113,9 @@ def test_clear_falls_back_to_detection(env: SimpleNamespace, project: str, tmp_p
     assert result.source == DETECTED
 
 
-def test_clear_outside_all_roots_leaves_none(env: SimpleNamespace, project: str) -> None:
+def test_clear_outside_all_roots_leaves_none(
+    env: SimpleNamespace, project: str
+) -> None:
     env.active.activate(project)
     outside = env.tmp / "elsewhere"
     outside.mkdir()
@@ -132,11 +142,17 @@ def test_unregistered_explicit_active_cleared_and_falls_back(
     assert result.project_id == other.id
 
 
-def test_stale_pointer_cleared_on_reconcile(env: SimpleNamespace, tmp_path: Path) -> None:
+def test_stale_pointer_cleared_on_reconcile(
+    env: SimpleNamespace, tmp_path: Path
+) -> None:
     root = tmp_path / "project"
     root.mkdir()
     env.registry.register(root, name="app")
-    stale = {"project_id": "ghost", "source": EXPLICIT, "updated_at": "2026-01-01T00:00:00+00:00"}
+    stale = {
+        "project_id": "ghost",
+        "source": EXPLICIT,
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    }
     (tmp_path / "active_project.json").write_text(json.dumps(stale))
     outside = tmp_path / "elsewhere"
     outside.mkdir()

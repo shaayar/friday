@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
-
 from friday.core.session import AssistantSession
 from friday.memory.models import (
     Memory,
@@ -64,7 +63,9 @@ def make_memory(
         scope=scope,
         content=content,
         confidence=confidence,
-        provenance=MemoryProvenance(source_conversation_id="conv-1", source_message_ids=("m1",)),
+        provenance=MemoryProvenance(
+            source_conversation_id="conv-1", source_message_ids=("m1",)
+        ),
         created_at=now,
         updated_at=now,
         valid_from=now,
@@ -90,6 +91,7 @@ class TestCompactionTrigger:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -111,6 +113,7 @@ class TestCompactionTrigger:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -134,15 +137,23 @@ class TestCompactionTrigger:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         # Create 25 messages (above threshold of 20)
         messages = [
-            Message(id=i, conversation_id=1, role="user" if i % 2 == 1 else "assistant",
-                    content=f"Message {i}", created_at="2026-01-01T00:00:00")
+            Message(
+                id=i,
+                conversation_id=1,
+                role="user" if i % 2 == 1 else "assistant",
+                content=f"Message {i}",
+                created_at="2026-01-01T00:00:00",
+            )
             for i in range(1, 26)
         ]
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=messages)
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=messages
+        )
 
         await session.on_assistant_message_persisted_for_compaction()
         await asyncio.sleep(0.05)
@@ -162,15 +173,25 @@ class TestCompactionTrigger:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         # Create messages with large content to exceed unit threshold
         messages = [
-            Message(id=i, conversation_id=1, role="user" if i % 2 == 1 else "assistant",
-                    content="x" * 2000, created_at="2026-01-01T00:00:00")
-            for i in range(1, 6)  # 5 messages * 2000 chars = 10000 units > 4000 threshold
+            Message(
+                id=i,
+                conversation_id=1,
+                role="user" if i % 2 == 1 else "assistant",
+                content="x" * 2000,
+                created_at="2026-01-01T00:00:00",
+            )
+            for i in range(
+                1, 6
+            )  # 5 messages * 2000 chars = 10000 units > 4000 threshold
         ]
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=messages)
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=messages
+        )
 
         await session.on_assistant_message_persisted_for_compaction()
         await asyncio.sleep(0.05)
@@ -199,18 +220,29 @@ class TestCompactionMessageSource:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 42
         messages = [
-            Message(id=1, conversation_id=1, role="user", content="Test", created_at="2026-01-01T00:00:00"),
+            Message(
+                id=1,
+                conversation_id=1,
+                role="user",
+                content="Test",
+                created_at="2026-01-01T00:00:00",
+            ),
         ]
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=messages)
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=messages
+        )
 
         await session.on_assistant_message_persisted_for_compaction()
         await asyncio.sleep(0.01)
 
         # Verify conversation store was called with correct ID
-        session._conversation_store.get_recent_messages.assert_called_with(42, limit=1000)
+        session._conversation_store.get_recent_messages.assert_called_with(
+            42, limit=1000
+        )
 
         await session.stop()
 
@@ -225,6 +257,7 @@ class TestCompactionMessageSource:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 999
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -261,6 +294,7 @@ class TestCompactionBoundary:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
 
         # Mock compaction store with existing compaction
@@ -281,10 +315,18 @@ class TestCompactionBoundary:
         session._compaction_store = mock_store
 
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=i, conversation_id=1, role="user", content=f"Msg {i}", created_at="2026-01-01T00:00:00")
-            for i in range(1, 25)
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=i,
+                    conversation_id=1,
+                    role="user",
+                    content=f"Msg {i}",
+                    created_at="2026-01-01T00:00:00",
+                )
+                for i in range(1, 25)
+            ]
+        )
 
         await session.on_assistant_message_persisted_for_compaction()
         await asyncio.sleep(0.05)
@@ -304,15 +346,24 @@ class TestCompactionBoundary:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
 
         # Create more messages than max_window (20)
         messages = [
-            Message(id=i, conversation_id=1, role="user", content=f"Msg {i}", created_at="2026-01-01T00:00:00")
+            Message(
+                id=i,
+                conversation_id=1,
+                role="user",
+                content=f"Msg {i}",
+                created_at="2026-01-01T00:00:00",
+            )
             for i in range(1, 30)
         ]
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=messages)
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=messages
+        )
 
         await session.on_assistant_message_persisted_for_compaction()
         await asyncio.sleep(0.05)
@@ -332,14 +383,23 @@ class TestCompactionBoundary:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         # 40 messages - enough for 2 windows of 20
         messages = [
-            Message(id=i, conversation_id=1, role="user", content=f"Msg {i}", created_at="2026-01-01T00:00:00")
+            Message(
+                id=i,
+                conversation_id=1,
+                role="user",
+                content=f"Msg {i}",
+                created_at="2026-01-01T00:00:00",
+            )
             for i in range(1, 41)
         ]
-        session._conversation_store.get_recent_messages = MagicMock(return_value=messages)
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=messages
+        )
 
         await session.on_assistant_message_persisted_for_compaction()
         await asyncio.sleep(0.05)
@@ -359,14 +419,23 @@ class TestCompactionBoundary:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         # 45 messages - enough for 2 windows, 1 leftover
         messages = [
-            Message(id=i, conversation_id=1, role="user", content=f"Msg {i}", created_at="2026-01-01T00:00:00")
+            Message(
+                id=i,
+                conversation_id=1,
+                role="user",
+                content=f"Msg {i}",
+                created_at="2026-01-01T00:00:00",
+            )
             for i in range(1, 46)
         ]
-        session._conversation_store.get_recent_messages = MagicMock(return_value=messages)
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=messages
+        )
 
         await session.on_assistant_message_persisted_for_compaction()
         await asyncio.sleep(0.05)
@@ -396,13 +465,22 @@ class TestCompactionIdempotency:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         messages = [
-            Message(id=i, conversation_id=1, role="user", content=f"Msg {i}", created_at="2026-01-01T00:00:00")
+            Message(
+                id=i,
+                conversation_id=1,
+                role="user",
+                content=f"Msg {i}",
+                created_at="2026-01-01T00:00:00",
+            )
             for i in range(1, 25)
         ]
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=messages)
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=messages
+        )
 
         # First compaction
         await session.on_assistant_message_persisted_for_compaction()
@@ -436,6 +514,7 @@ class TestCompactionFailureIsolation:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -460,11 +539,20 @@ class TestCompactionFailureIsolation:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="Test", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="Test",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
 
         # Break memory extractor
         session._memory_extractor = None
@@ -486,6 +574,7 @@ class TestCompactionFailureIsolation:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -518,6 +607,7 @@ class TestCompactionTaskOwnership:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -541,6 +631,7 @@ class TestCompactionTaskOwnership:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -556,6 +647,7 @@ class TestCompactionTaskOwnership:
     @pytest.mark.asyncio
     async def test_shutdown_cancels_compaction(self) -> None:
         """Long-running compaction is cancelled on shutdown."""
+
         class SlowLLMBackend:
             async def complete(self, system: str, user: str) -> str:
                 await asyncio.sleep(10)
@@ -567,6 +659,7 @@ class TestCompactionTaskOwnership:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -592,6 +685,7 @@ class TestCompactionTaskOwnership:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -600,7 +694,11 @@ class TestCompactionTaskOwnership:
         await session.stop()
 
         warning_records = [r for r in caplog.records if r.levelno >= 30]
-        failure_warnings = [r for r in warning_records if "failed" in r.message.lower() and "compaction" in r.message.lower()]
+        failure_warnings = [
+            r
+            for r in warning_records
+            if "failed" in r.message.lower() and "compaction" in r.message.lower()
+        ]
         assert len(failure_warnings) == 0
 
 
@@ -621,6 +719,7 @@ class TestNoSideEffects:
         )
 
         from livekit.agents.llm import ChatContext, ChatMessage
+
         turn_ctx = ChatContext.empty()
         new_message = ChatMessage(role="user", content=["Test"])
 
@@ -653,6 +752,7 @@ class TestNoSideEffects:
 
         # Memory extraction should still work
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -685,12 +785,15 @@ class TestCompactionPersistence:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            type("Msg", (), {"id": i, "role": "user", "content": f"Msg {i}"})()
-            for i in range(1, 25)
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                type("Msg", (), {"id": i, "role": "user", "content": f"Msg {i}"})()
+                for i in range(1, 25)
+            ]
+        )
 
         await session.on_assistant_message_persisted_for_compaction()
         await asyncio.sleep(0.05)
@@ -720,12 +823,23 @@ class TestCompactionIntegration:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            type("Msg", (), {"id": i, "role": "user" if i % 2 == 1 else "assistant", "content": f"Msg {i}"})()
-            for i in range(1, 25)
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                type(
+                    "Msg",
+                    (),
+                    {
+                        "id": i,
+                        "role": "user" if i % 2 == 1 else "assistant",
+                        "content": f"Msg {i}",
+                    },
+                )()
+                for i in range(1, 25)
+            ]
+        )
 
         # Trigger compaction
         await session.on_assistant_message_persisted_for_compaction()
@@ -747,11 +861,20 @@ class TestCompactionIntegration:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="I prefer dark mode", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="I prefer dark mode",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._memory_manager.get_active = MagicMock(return_value=[])
         session._project_service.active_project = lambda: None
@@ -781,12 +904,15 @@ class TestCompactionIntegration:
         )
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            type("Msg", (), {"id": i, "role": "user", "content": f"Msg {i}"})()
-            for i in range(1, 25)
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                type("Msg", (), {"id": i, "role": "user", "content": f"Msg {i}"})()
+                for i in range(1, 25)
+            ]
+        )
 
         # Break memory extractor
         session._memory_extractor = None
@@ -809,6 +935,7 @@ class TestCompactionIntegration:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])

@@ -29,18 +29,14 @@ from typing import Protocol
 from friday.compaction.boundary import next_compaction_start, select_compaction_window
 from friday.compaction.exceptions import CompactionAlreadyExistsError
 from friday.compaction.extractor import ConversationCompactionExtractor
+from friday.compaction.extractor import _Message as ExtractorMessage
 from friday.compaction.models import ConversationCompaction
 from friday.compaction.trigger import should_compact
 from friday.config import config
 from friday.context.models import estimate_units
 
-
-class Message(Protocol):
-    """A conversation message as seen by the compactor (store-shaped)."""
-
-    id: int
-    role: str
-    content: str
+# Message is defined by the extractor; we re-export it for callers
+Message = ExtractorMessage
 
 
 class CompactionStorage(Protocol):
@@ -119,7 +115,9 @@ class ConversationCompactor:
                 compacted=False, compaction=None, remaining_messages=eligible_count
             )
 
-        window = select_compaction_window(messages, next_start=boundary, max_window=self._max_window)
+        window = select_compaction_window(
+            messages, next_start=boundary, max_window=self._max_window
+        )
         if not window:
             return CompactionResult(
                 compacted=False, compaction=None, remaining_messages=eligible_count
@@ -141,9 +139,7 @@ class ConversationCompactor:
         )
 
     @staticmethod
-    def _eligible_stats(
-        messages: Sequence[Message], boundary: int | None
-    ) -> tuple[int, int]:
+    def _eligible_stats(messages: Sequence[Message], boundary: int | None) -> tuple[int, int]:
         """Count eligible messages and their estimated units since the boundary.
 
         Mirrors the M2 eligibility rule (``id >= boundary``, or all messages

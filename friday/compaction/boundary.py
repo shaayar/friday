@@ -17,8 +17,9 @@ starts at the first available message.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Protocol, TypeAlias
+from typing import TypeAlias
 
+from friday.compaction.extractor import _Message as Message
 from friday.compaction.models import ConversationCompaction
 
 Boundary: TypeAlias = int | None
@@ -61,13 +62,6 @@ def next_compaction_start(compactions: Iterable[ConversationCompaction]) -> Boun
     if greatest is None:
         return None
     return greatest + 1
-
-
-class _Message(Protocol):
-    id: int
-
-
-Message: TypeAlias = _Message
 
 
 def select_compaction_window(

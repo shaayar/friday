@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Protocol
 
 from friday.compaction.exceptions import PromotionStorageError
@@ -99,7 +99,7 @@ def _classify_fact_type(content: str) -> MemoryType | None:
     return None
 
 
-class PromotionOutcome(str, Enum):
+class PromotionOutcome(StrEnum):
     """Outcome of promotion for a single compaction item."""
 
     SKIPPED = "skipped"
@@ -231,7 +231,7 @@ class ConversationMemoryPromoter:
             )
 
         results = [
-            plan.result if plan.result is not None else batch_outcomes[plan.item.item_id]
+            plan.result if plan.result is not None else batch_outcomes[plan.item.item_id]  # type: ignore[union-attr,index]
             for plan in plans
         ]
         return PromotionResult(compaction.compaction_id, tuple(results))
@@ -248,14 +248,7 @@ class ConversationMemoryPromoter:
         project_id: str | None,
     ) -> _Plan:
         if category in _INELIGIBLE_REASONS:
-            return _Plan(
-                result=PromotionItemResult(
-                    item.item_id,
-                    category,
-                    PromotionOutcome.SKIPPED,
-                    reason=_INELIGIBLE_REASONS[category],
-                )
-            )
+            return self._ineligible(item, category)
 
         ledger = self._promotion_store.get(item.item_id)
         if ledger is None:
@@ -266,55 +259,92 @@ class ConversationMemoryPromoter:
                     category=category,
                 )
             )
-        if ledger.status is PromotionStatus.PROMOTED:
-            return _Plan(
-                result=PromotionItemResult(
-                    item.item_id, category, PromotionOutcome.NOOP, reason="already_promoted"
-                )
+
+        if ledger.status in (PromotionStatus.PROMOTED, PromotionStatus.REJECTED):
+            reason = (
+                "already_promoted"
+                if ledger.status is PromotionStatus.PROMOTED
+                else "already_rejected"
             )
-        if ledger.status is PromotionStatus.REJECTED:
-            return _Plan(
-                result=PromotionItemResult(
-                    item.item_id, category, PromotionOutcome.NOOP, reason="already_rejected"
-                )
-            )
+            return self._noop(item, category, reason)
 
         matching = self._find_matching_memory(compaction, item)
         if matching is not None:
+            assert ledger is not None
             promoted = ledger.mark_promoted((matching.id,))
             self._promotion_store.replace(promoted)
-            return _Plan(
-                result=PromotionItemResult(
-                    item.item_id,
-                    category,
-                    PromotionOutcome.RECONCILED,
-                    memory_ids=(matching.id,),
-                    reason="already_present_in_memory",
-                )
-            )
+            return self._reconciled(item, category, matching.id)
 
         memory_type = self._determine_memory_type(category, item, project_id)
         if memory_type is None:
             reason = self._determine_skip_reason(category, item, project_id)
+            assert ledger is not None
             self._promotion_store.replace(ledger.mark_rejected(reason))
-            return _Plan(
-                result=PromotionItemResult(
-                    item.item_id, category, PromotionOutcome.REJECTED, reason=reason
-                )
-            )
+            return self._rejected(item, category, reason)
 
         try:
-            candidate = self._build_candidate(item, memory_type, compaction.conversation_id, project_id)
+            candidate = self._build_candidate(
+                item, memory_type, compaction.conversation_id, project_id
+            )
         except (TypeError, ValueError) as exc:
             reason = f"invalid_candidate: {exc}"
+            assert ledger is not None
             self._promotion_store.replace(ledger.mark_rejected(reason))
-            return _Plan(
-                result=PromotionItemResult(
-                    item.item_id, category, PromotionOutcome.REJECTED, reason=reason
-                )
-            )
+            return self._rejected(item, category, reason)
 
-        return _Plan(result=None, ledger=ledger, item=item, category=category, candidate=candidate)
+        return _Plan(
+            result=None,
+            ledger=ledger,
+            item=item,
+            category=category,
+            candidate=candidate,
+        )
+
+    def _reconciled(
+        self, item: CompactionItem, category: CompactionItemCategory, memory_id: str
+    ) -> _Plan:
+        """Create a plan for a reconciled item."""
+        return _Plan(
+            result=PromotionItemResult(
+                item.item_id,
+                category,
+                PromotionOutcome.RECONCILED,
+                memory_ids=(memory_id,),
+                reason="already_present_in_memory",
+            )
+        )
+
+    def _rejected(
+        self, item: CompactionItem, category: CompactionItemCategory, reason: str
+    ) -> _Plan:
+        """Create a plan for a rejected item."""
+        return _Plan(
+            result=PromotionItemResult(
+                item.item_id, category, PromotionOutcome.REJECTED, reason=reason
+            )
+        )
+
+    def _ineligible(self, item: CompactionItem, category: CompactionItemCategory) -> _Plan:
+        """Create a plan for an ineligible category."""
+        return _Plan(
+            result=PromotionItemResult(
+                item.item_id,
+                category,
+                PromotionOutcome.SKIPPED,
+                reason=_INELIGIBLE_REASONS[category],
+            )
+        )
+
+    def _noop(self, item: CompactionItem, category: CompactionItemCategory, reason: str) -> _Plan:
+        """Create a plan for a no-op (already promoted/rejected)."""
+        return _Plan(
+            result=PromotionItemResult(
+                item.item_id,
+                category,
+                PromotionOutcome.NOOP,
+                reason=reason,
+            )
+        )
 
     def _determine_memory_type(
         self,
@@ -341,7 +371,9 @@ class ConversationMemoryPromoter:
             if _classify_fact_type(item.content) is MemoryType.PROJECT_FACT:
                 return "project_fact_requires_project_id"
             return "fact_subject_unclear"
-        return "decision_requires_project_id"
+        if project_id is None:
+            return "decision_requires_project_id"
+        return "unknown_skip_reason"
 
     @staticmethod
     def _build_candidate(
@@ -356,7 +388,9 @@ class ConversationMemoryPromoter:
         remains authoritative and may demote it. ``reasoning`` is left None
         (the compaction item carries no LLM reasoning to copy).
         """
-        candidate_project_id = project_id if memory_type.default_scope is MemoryScope.PROJECT else None
+        candidate_project_id = (
+            project_id if memory_type.default_scope is MemoryScope.PROJECT else None
+        )
         return MemoryCandidate(
             type=memory_type,
             scope=memory_type.default_scope,
@@ -409,7 +443,15 @@ class ConversationMemoryPromoter:
     def _process_batch(
         self, pending: list[_Plan], *, compaction_id: str
     ) -> dict[str, PromotionItemResult]:
-        candidates = [plan.candidate for plan in pending]
+        # Filter to only plans with candidates (these have item, category set)
+        candidates: list[MemoryCandidate] = []
+        filtered_plans: list[_Plan] = []
+        for plan in pending:
+            if plan.candidate is not None:
+                assert plan.item is not None
+                assert plan.category is not None
+                candidates.append(plan.candidate)
+                filtered_plans.append(plan)
 
         try:
             resolutions = self._resolver.resolve(
@@ -419,7 +461,8 @@ class ConversationMemoryPromoter:
             logger.warning("Promotion resolution failed for compaction %s: %s", compaction_id, exc)
             return {
                 plan.item.item_id: self._transient(plan, f"resolution_failed: {exc}")
-                for plan in pending
+                for plan in filtered_plans
+                if plan.item is not None
             }
 
         try:
@@ -428,11 +471,14 @@ class ConversationMemoryPromoter:
             logger.warning("Memory application failed for compaction %s: %s", compaction_id, exc)
             return {
                 plan.item.item_id: self._transient(plan, f"memory_application_failed: {exc}")
-                for plan in pending
+                for plan in filtered_plans
+                if plan.item is not None
             }
 
         outcomes: dict[str, PromotionItemResult] = {}
-        for plan, resolution, memory in zip(pending, resolutions, applied):
+        # All plans in filtered_plans have candidate set, so item/category are not None
+        for plan, resolution, memory in zip(filtered_plans, resolutions, applied, strict=False):
+            assert plan.item is not None
             outcomes[plan.item.item_id] = self._apply_resolution(plan, resolution, memory)
         return outcomes
 
@@ -442,12 +488,20 @@ class ConversationMemoryPromoter:
         resolution: Resolution,
         memory: Memory | None,
     ) -> PromotionItemResult:
+        # For plans that reach here (from _process_batch), item,
+        # category, ledger are guaranteed non-None
+        assert plan.item is not None
+        assert plan.category is not None
+        assert plan.ledger is not None
+
         item_id = plan.item.item_id
         category = plan.category
         ledger = plan.ledger
 
         if resolution.kind is ResolutionKind.REJECT:
             reason = resolution.reason or "rejected_by_resolver"
+            # ledger is guaranteed to be set for items that go through resolution
+            assert ledger is not None
             self._promotion_store.replace(ledger.mark_rejected(reason))
             return PromotionItemResult(item_id, category, PromotionOutcome.REJECTED, reason=reason)
 
@@ -457,11 +511,15 @@ class ConversationMemoryPromoter:
             kind = PromotionResolutionKind.SUPERSEDE
         else:
             reason = f"unsupported_resolution_kind: {resolution.kind.value}"
+            # ledger is guaranteed to be set for items that go through resolution
+            assert ledger is not None
             self._promotion_store.replace(ledger.mark_rejected(reason))
             return PromotionItemResult(item_id, category, PromotionOutcome.REJECTED, reason=reason)
 
         memory_ids = (memory.id,) if memory is not None else ()
         try:
+            # ledger is guaranteed to be set for items that go through resolution
+            assert ledger is not None
             promoted = ledger.mark_promoted(memory_ids, resolution_kind=kind)
             self._promotion_store.replace(promoted)
         except (PromotionStorageError, OSError, ValueError) as exc:
@@ -469,7 +527,11 @@ class ConversationMemoryPromoter:
             # record the failure; a retry reconciles via provenance/content.
             logger.warning("Ledger update failed for item %s: %s", item_id, exc)
             try:
-                self._promotion_store.replace(ledger.record_transient_failure(f"ledger_update_failed: {exc}"))
+                # ledger is guaranteed to be set for items that go through resolution
+                assert ledger is not None
+                self._promotion_store.replace(
+                    ledger.record_transient_failure(f"ledger_update_failed: {exc}")
+                )
             except Exception:  # noqa: BLE001
                 logger.warning("Could not record transient ledger failure for item %s", item_id)
             return PromotionItemResult(
@@ -492,7 +554,12 @@ class ConversationMemoryPromoter:
 
     def _transient(self, plan: _Plan, error: str) -> PromotionItemResult:
         """Record a transient failure: stay PENDING, increment retry, keep reason."""
+        # ledger is guaranteed for items that go through resolution
+        assert plan.ledger is not None
         self._promotion_store.replace(plan.ledger.record_transient_failure(error))
+        # item and category are guaranteed for items that go through resolution
+        assert plan.item is not None
+        assert plan.category is not None
         return PromotionItemResult(
             plan.item.item_id,
             plan.category,

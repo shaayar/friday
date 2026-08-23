@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 from friday.memory.models import (
     Memory,
@@ -30,7 +30,7 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class ResolutionKind(str, Enum):
+class ResolutionKind(StrEnum):
     CREATE = "create"
     SUPERSEDE = "supersede"
     INVALIDATE = "invalidate"
@@ -55,6 +55,14 @@ class MemoryCandidate:
     reasoning: str | None = None
 
     def __post_init__(self) -> None:
+        self._validate_type_and_scope()
+        self._validate_content()
+        self._validate_confidence()
+        self._validate_conversation_id()
+        self._validate_message_ids()
+        self._validate_project_id()
+
+    def _validate_type_and_scope(self) -> None:
         if not isinstance(self.type, MemoryType):
             raise TypeError(f"Invalid memory type: {self.type!r}")
         if not isinstance(self.scope, MemoryScope):
@@ -65,18 +73,22 @@ class MemoryCandidate:
                 f"Memory type {self.type.value!r} must use scope {expected_scope.value!r}"
             )
 
+    def _validate_content(self) -> None:
         if not isinstance(self.content, str) or not self.content.strip():
             raise ValueError("content cannot be empty")
         object.__setattr__(self, "content", self.content)
 
+    def _validate_confidence(self) -> None:
         if not isinstance(self.confidence, MemoryConfidence):
             raise TypeError(f"Invalid confidence: {self.confidence!r}")
 
+    def _validate_conversation_id(self) -> None:
         conversation_id = str(self.source_conversation_id).strip()
         if not conversation_id:
             raise ValueError("source_conversation_id cannot be empty")
         object.__setattr__(self, "source_conversation_id", conversation_id)
 
+    def _validate_message_ids(self) -> None:
         message_ids = tuple(str(message_id).strip() for message_id in self.source_message_ids)
         if any(not message_id for message_id in message_ids):
             raise ValueError("source_message_ids cannot contain empty values")
@@ -90,6 +102,7 @@ class MemoryCandidate:
             raise ValueError("source_message_ids must be distinct")
         object.__setattr__(self, "source_message_ids", message_ids)
 
+    def _validate_project_id(self) -> None:
         project_id = None if self.project_id is None else str(self.project_id).strip()
         if project_id == "":
             raise ValueError("project_id cannot be empty")
@@ -125,7 +138,10 @@ class Resolution:
             raise TypeError(f"Invalid resolution kind: {self.kind!r}")
         if self.kind is ResolutionKind.INVALIDATE and self.candidate is not None:
             raise ValueError("INVALIDATE resolutions must not carry a candidate")
-        if self.kind in (ResolutionKind.SUPERSEDE, ResolutionKind.INVALIDATE) and not self.existing_memory_id:
+        if (
+            self.kind in (ResolutionKind.SUPERSEDE, ResolutionKind.INVALIDATE)
+            and not self.existing_memory_id
+        ):
             raise ValueError(f"{self.kind.value.upper()} resolutions require existing_memory_id")
         if self.kind in (ResolutionKind.CREATE, ResolutionKind.REJECT) and self.candidate is None:
             raise ValueError(f"{self.kind.value.upper()} resolutions require a candidate")

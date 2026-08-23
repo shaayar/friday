@@ -22,7 +22,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 from friday.ai.providers import LiveKitLLMBackend, build_llm_backend
 from friday.compaction.compactor import ConversationCompactor
 from friday.compaction.extractor import ConversationCompactionExtractor
@@ -157,7 +156,9 @@ class TestProductionBackend:
         roles = [getattr(item, "role", None) for item in ctx.items]
         assert roles == ["system", "user"]
 
-    def test_production_llm_backend_built_from_configured_provider(self, monkeypatch) -> None:
+    def test_production_llm_backend_built_from_configured_provider(
+        self, monkeypatch
+    ) -> None:
         from friday.ai import providers
 
         fake = FakeLiveKitLLM()
@@ -184,7 +185,9 @@ class TestProductionBackend:
         assert candidates[0].content == "User prefers dark mode."
 
     @pytest.mark.asyncio
-    async def test_existing_compaction_pipeline_runs_with_production_adapter(self) -> None:
+    async def test_existing_compaction_pipeline_runs_with_production_adapter(
+        self,
+    ) -> None:
         @dataclass(frozen=True, slots=True)
         class Msg:
             id: int
@@ -210,7 +213,7 @@ class TestSessionProductionWiring:
     ) -> None:
         from friday.ai import providers
 
-        monkeypatch.setattr(providers, "build_llm", lambda: FakeLiveKitLLM())
+        monkeypatch.setattr(providers, "build_llm", FakeLiveKitLLM)
         session = AssistantSession(
             friday_home=temp_friday_home,
             llm_backend=build_llm_backend(),
@@ -258,7 +261,9 @@ class TestSessionProductionWiring:
 
 
 class TestBackgroundDispatcher:
-    async def _active_session(self, temp_friday_home) -> tuple[AssistantSession, FakeLiveKitLLM]:
+    async def _active_session(
+        self, temp_friday_home
+    ) -> tuple[AssistantSession, FakeLiveKitLLM]:
         fake = FakeLiveKitLLM()
         session = AssistantSession(
             friday_home=temp_friday_home,
@@ -267,11 +272,15 @@ class TestBackgroundDispatcher:
         session._extraction_interval = 1
         session._compactor._message_threshold = 1
         await session.start()
-        session.conversation_store.save_message(session.conversation_id, "user", "I prefer dark mode.")
+        session.conversation_store.save_message(
+            session.conversation_id, "user", "I prefer dark mode."
+        )
         return session, fake
 
     @pytest.mark.asyncio
-    async def test_assistant_persistence_schedules_memory_task(self, temp_friday_home) -> None:
+    async def test_assistant_persistence_schedules_memory_task(
+        self, temp_friday_home
+    ) -> None:
         session, fake = await self._active_session(temp_friday_home)
         try:
             session.on_assistant_persisted()
@@ -280,14 +289,17 @@ class TestBackgroundDispatcher:
             extraction_calls = [
                 ctx
                 for ctx in fake.chat_contexts
-                if "extract durable, factual statements" in FakeLiveKitLLM._system_text(ctx)
+                if "extract durable, factual statements"
+                in FakeLiveKitLLM._system_text(ctx)
             ]
             assert extraction_calls
         finally:
             await session.stop()
 
     @pytest.mark.asyncio
-    async def test_assistant_persistence_schedules_compaction_task(self, temp_friday_home) -> None:
+    async def test_assistant_persistence_schedules_compaction_task(
+        self, temp_friday_home
+    ) -> None:
         session, fake = await self._active_session(temp_friday_home)
         try:
             session.on_assistant_persisted()
@@ -323,35 +335,51 @@ class TestBackgroundDispatcher:
         try:
             session.on_assistant_persisted()
             await flush_background(session)
-            compactions = session._compaction_store.list_for_conversation(session.conversation_id)
+            compactions = session._compaction_store.list_for_conversation(
+                session.conversation_id
+            )
             assert len(compactions) == 1
             assert compactions[0].summary == "Designed runtime wiring."
         finally:
             await session.stop()
 
     @pytest.mark.asyncio
-    async def test_memory_failure_does_not_stop_compaction(self, temp_friday_home) -> None:
+    async def test_memory_failure_does_not_stop_compaction(
+        self, temp_friday_home
+    ) -> None:
         fake = RaisingExtractionLLM()
-        session = AssistantSession(friday_home=temp_friday_home, llm_backend=make_backend(fake))
+        session = AssistantSession(
+            friday_home=temp_friday_home, llm_backend=make_backend(fake)
+        )
         session._extraction_interval = 1
         session._compactor._message_threshold = 1
         await session.start()
-        session.conversation_store.save_message(session.conversation_id, "user", "I prefer dark mode.")
+        session.conversation_store.save_message(
+            session.conversation_id, "user", "I prefer dark mode."
+        )
         try:
             session.on_assistant_persisted()
             await flush_background(session)
-            compactions = session._compaction_store.list_for_conversation(session.conversation_id)
+            compactions = session._compaction_store.list_for_conversation(
+                session.conversation_id
+            )
             assert len(compactions) == 1
         finally:
             await session.stop()
 
     @pytest.mark.asyncio
-    async def test_compaction_failure_does_not_stop_memory(self, temp_friday_home) -> None:
+    async def test_compaction_failure_does_not_stop_memory(
+        self, temp_friday_home
+    ) -> None:
         fake = RaisingCompactionLLM()
-        session = AssistantSession(friday_home=temp_friday_home, llm_backend=make_backend(fake))
+        session = AssistantSession(
+            friday_home=temp_friday_home, llm_backend=make_backend(fake)
+        )
         session._extraction_interval = 1
         await session.start()
-        session.conversation_store.save_message(session.conversation_id, "user", "I prefer dark mode.")
+        session.conversation_store.save_message(
+            session.conversation_id, "user", "I prefer dark mode."
+        )
         try:
             session.on_assistant_persisted()
             await flush_background(session)
@@ -368,7 +396,9 @@ class TestBackgroundDispatcher:
 
 class TestLifecycle:
     @pytest.mark.asyncio
-    async def test_rejected_background_coroutine_is_closed(self, temp_friday_home) -> None:
+    async def test_rejected_background_coroutine_is_closed(
+        self, temp_friday_home
+    ) -> None:
         session = AssistantSession(friday_home=temp_friday_home)
         session._stopping = True
         coro = session.on_assistant_message_persisted()
@@ -413,10 +443,16 @@ class TestLifecycle:
             await orig_wait(timeout)
 
         session._wait_background_tasks = wrapped_wait
-        session._conversation_store.close = MagicMock(side_effect=lambda: order.append("close"))
-        session._memory_store.close = MagicMock(side_effect=lambda: order.append("close"))
+        session._conversation_store.close = MagicMock(
+            side_effect=lambda: order.append("close")
+        )
+        session._memory_store.close = MagicMock(
+            side_effect=lambda: order.append("close")
+        )
         if session._compaction_store is not None:
-            session._compaction_store.close = MagicMock(side_effect=lambda: order.append("close"))
+            session._compaction_store.close = MagicMock(
+                side_effect=lambda: order.append("close")
+            )
 
         await session.stop()
         assert "wait" in order
@@ -442,7 +478,9 @@ class TestProductionPathIntegration:
         conv_id = session.conversation_id
         try:
             for i in range(1, 4):
-                session.conversation_store.save_message(conv_id, "user", f"Note {i}: I prefer dark mode.")
+                session.conversation_store.save_message(
+                    conv_id, "user", f"Note {i}: I prefer dark mode."
+                )
 
             session.on_assistant_persisted()
             await flush_background(session)
@@ -466,7 +504,9 @@ class TestProductionPathIntegration:
         )
         try:
             session._extraction_interval = 1
-            session.conversation_store.save_message(session.conversation_id, "user", "hello")
+            session.conversation_store.save_message(
+                session.conversation_id, "user", "hello"
+            )
             session.on_assistant_persisted()
             await flush_background(session)
         finally:

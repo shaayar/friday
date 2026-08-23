@@ -9,7 +9,6 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 import pytest
-
 from friday.context.manager import ContextManager, ProjectContext
 from friday.context.models import ContextSnapshot, Message
 from friday.context.shrinker import ContextShrinker
@@ -26,6 +25,7 @@ from friday.memory.models import (
 # ======================================================================
 # Fixtures
 # ======================================================================
+
 
 class FakeLLMBackend:
     """Fake LLMBackend for testing."""
@@ -47,7 +47,9 @@ class FakeMemoryProvider:
         self.raise_on_get_active = False
         self.calls = 0
 
-    def get_active(self, *, scope=None, project_id=None, valid_at=None, limit=100, offset=0):
+    def get_active(
+        self, *, scope=None, project_id=None, valid_at=None, limit=100, offset=0
+    ):
         self.calls += 1
         if self.raise_on_get_active:
             raise RuntimeError("memory store unavailable")
@@ -117,7 +119,9 @@ def make_memory(
         scope=scope,
         content=content,
         confidence=confidence,
-        provenance=MemoryProvenance(source_conversation_id="conv-1", source_message_ids=("m1",)),
+        provenance=MemoryProvenance(
+            source_conversation_id="conv-1", source_message_ids=("m1",)
+        ),
         created_at=now,
         updated_at=now,
         valid_from=now,
@@ -129,6 +133,7 @@ def make_memory(
 # ======================================================================
 # Helpers
 # ======================================================================
+
 
 def make_snapshot(
     *,
@@ -148,7 +153,9 @@ def make_snapshot(
         project_context=project_context,
         durable_memories=durable_memories,
         compressed_history=compressed_history,
-        budget=ContextBudget(max_input_units=40000, reserved_output_units=8000, safety_margin=2000),
+        budget=ContextBudget(
+            max_input_units=40000, reserved_output_units=8000, safety_margin=2000
+        ),
         estimated_units=1000,
         compressed=compressed_history is not None,
     )
@@ -173,6 +180,7 @@ def make_turn_context(
 # ======================================================================
 # Test: LiveKit Message Conversion
 # ======================================================================
+
 
 class TestLiveKitMessageConversion:
     """Test conversion of LiveKit ChatMessage to ContextManager message tuples."""
@@ -238,6 +246,7 @@ class TestLiveKitMessageConversion:
 # Test: ContextSnapshot to LiveKit ChatContext
 # ======================================================================
 
+
 class TestContextSnapshotToLiveKitContext:
     """Test building LiveKit ChatContext from ContextSnapshot."""
 
@@ -255,7 +264,12 @@ class TestContextSnapshotToLiveKitContext:
             project_context="Project: PostLeaf\nStack: Next.js",
             durable_memories=(
                 make_memory("User prefers Vim.", "mem-1"),
-                make_memory("Project uses Python.", "mem-2", scope=MemoryScope.PROJECT, project_id="proj-1"),
+                make_memory(
+                    "Project uses Python.",
+                    "mem-2",
+                    scope=MemoryScope.PROJECT,
+                    project_id="proj-1",
+                ),
             ),
             compressed_history="Earlier: discussed editor preferences.",
         )
@@ -339,6 +353,7 @@ class TestContextSnapshotToLiveKitContext:
 # Test: ContextManager Is Called Correctly
 # ======================================================================
 
+
 class TestContextManagerCalled:
     """Test that ContextManager is invoked with expected arguments."""
 
@@ -351,6 +366,7 @@ class TestContextManagerCalled:
 
         # Create ContextManager with fakes
         from friday.context.models import ContextBudget
+
         cm = ContextManager(
             memory_manager=fake_memory,
             project_context_provider=fake_project,
@@ -370,7 +386,7 @@ class TestContextManagerCalled:
                 ("m1", "user", "Hello"),
                 ("m2", "assistant", "Hi"),
             ),
-            conversation_id="conv-123",
+            _conversation_id="conv-123",
             active_project_id="proj-1",
         )
 
@@ -385,6 +401,7 @@ class TestContextManagerCalled:
 # ======================================================================
 # Test: Durable Memory Reaches LLM Context
 # ======================================================================
+
 
 class TestDurableMemoryReachesLLMContext:
     """Test that seeded durable memories appear in the assembled context."""
@@ -407,7 +424,7 @@ class TestDurableMemoryReachesLLMContext:
             system_instructions="System",
             current_user_message="What theme?",
             recent_messages=(),
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
 
@@ -428,6 +445,7 @@ class TestDurableMemoryReachesLLMContext:
 # ======================================================================
 # Test: Project Context Reaches LLM Context
 # ======================================================================
+
 
 class TestProjectContextReachesLLMContext:
     """Test that active project context appears in the assembled context."""
@@ -453,7 +471,7 @@ class TestProjectContextReachesLLMContext:
             system_instructions="System",
             current_user_message="What project?",
             recent_messages=(),
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
 
@@ -481,6 +499,7 @@ class TestProjectContextReachesLLMContext:
 # Test: Budgeted Context Replaces Unbounded History
 # ======================================================================
 
+
 class TestBudgetedContextReplacesHistory:
     """Test that context budget limits what reaches the LLM."""
 
@@ -495,7 +514,9 @@ class TestBudgetedContextReplacesHistory:
             project_context_provider=fake_project,
             shrinker=None,
             # Use small budget to force truncation
-            budget=ContextBudget(max_input_units=500, reserved_output_units=100, safety_margin=50),
+            budget=ContextBudget(
+                max_input_units=500, reserved_output_units=100, safety_margin=50
+            ),
         )
 
         # Create many messages exceeding budget
@@ -505,7 +526,7 @@ class TestBudgetedContextReplacesHistory:
             system_instructions="S",
             current_user_message="C",
             recent_messages=many_messages,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
 
@@ -520,6 +541,7 @@ class TestBudgetedContextReplacesHistory:
 # ======================================================================
 # Test: Tool Items Preservation (Blocker Check)
 # ======================================================================
+
 
 class TestToolItemsPreservation:
     """Test that FunctionCall / FunctionCallOutput items are preserved as
@@ -540,8 +562,15 @@ class TestToolItemsPreservation:
         turn_ctx.add_message(role="user", content=["Hello"])
         turn_ctx.add_message(role="assistant", content=["Let me read it"])
 
-        fc = FunctionCall(call_id="call-1", name="read_file", arguments='{"path": "/tmp/x.txt"}')
-        fco = FunctionCallOutput(call_id="call-1", name="read_file", output="File content here", is_error=False)
+        fc = FunctionCall(
+            call_id="call-1", name="read_file", arguments='{"path": "/tmp/x.txt"}'
+        )
+        fco = FunctionCallOutput(
+            call_id="call-1",
+            name="read_file",
+            output="File content here",
+            is_error=False,
+        )
         turn_ctx.insert(fc)
         turn_ctx.insert(fco)
 
@@ -555,7 +584,10 @@ class TestToolItemsPreservation:
 
         snapshot = make_snapshot(
             system_instructions="System",
-            recent_messages=(("msg-1", "user", "Hello"), ("msg-2", "assistant", "Let me read it")),
+            recent_messages=(
+                ("msg-1", "user", "Hello"),
+                ("msg-2", "assistant", "Let me read it"),
+            ),
         )
 
         session = AssistantSession()
@@ -581,13 +613,18 @@ class TestToolItemsPreservation:
 
         snapshot = make_snapshot(
             system_instructions="System",
-            recent_messages=(("msg-1", "user", "Hello"), ("msg-2", "assistant", "Let me read it")),
+            recent_messages=(
+                ("msg-1", "user", "Hello"),
+                ("msg-2", "assistant", "Let me read it"),
+            ),
         )
 
         session = AssistantSession()
         ctx = session._build_replacement_context(turn_ctx, snapshot)
 
-        message_text = " ".join(item.text_content or "" for item in ctx.items if item.type == "message")
+        message_text = " ".join(
+            item.text_content or "" for item in ctx.items if item.type == "message"
+        )
         assert "call-1" not in message_text
         assert "read_file" not in message_text
         assert "/tmp/x.txt" not in message_text
@@ -598,7 +635,10 @@ class TestToolItemsPreservation:
 
         snapshot = make_snapshot(
             system_instructions="System",
-            recent_messages=(("msg-1", "user", "Hello"), ("msg-2", "assistant", "Let me read it")),
+            recent_messages=(
+                ("msg-1", "user", "Hello"),
+                ("msg-2", "assistant", "Let me read it"),
+            ),
         )
 
         session = AssistantSession()
@@ -612,14 +652,19 @@ class TestToolItemsPreservation:
 
         snapshot = make_snapshot(
             system_instructions="System",
-            recent_messages=(("msg-1", "user", "Hello"), ("msg-2", "assistant", "Let me read it")),
+            recent_messages=(
+                ("msg-1", "user", "Hello"),
+                ("msg-2", "assistant", "Let me read it"),
+            ),
             durable_memories=(make_memory("User prefers Vim.", "mem-1"),),
         )
 
         session = AssistantSession()
         ctx = session._build_replacement_context(turn_ctx, snapshot)
 
-        contents = [item.text_content or "" for item in ctx.items if item.type == "message"]
+        contents = [
+            item.text_content or "" for item in ctx.items if item.type == "message"
+        ]
         assert any("User prefers Vim." in c for c in contents)
         assert any(item.type == "function_call" for item in ctx.items)
 
@@ -628,11 +673,16 @@ class TestToolItemsPreservation:
 # Test: In-Place Application on Turn Context
 # ======================================================================
 
+
 class TestInPlaceApplication:
     """Test that assemble_context_for_turn applies the context to turn_ctx
     in place — LiveKit consumes this exact context for the LLM call."""
 
-    def _build_session(self, memories: list[Memory] | None = None, project: ProjectContext | None = None):
+    def _build_session(
+        self,
+        memories: list[Memory] | None = None,
+        project: ProjectContext | None = None,
+    ):
         session = AssistantSession()
         fake_memory = FakeMemoryProvider(memories=memories)
         fake_project = FakeProjectProvider(context=project)
@@ -661,7 +711,9 @@ class TestInPlaceApplication:
         assert turn_ctx.items is custom.items
 
         roles = [item.role for item in turn_ctx.items]
-        contents = [item.text_content or "" for item in turn_ctx.items if item.type == "message"]
+        contents = [
+            item.text_content or "" for item in turn_ctx.items if item.type == "message"
+        ]
 
         # System instructions present exactly once
         assert roles.count("system") == 1
@@ -725,6 +777,7 @@ class TestInPlaceApplication:
 # Test: Context Failure Does Not Break Turn
 # ======================================================================
 
+
 class TestContextFailureDegradesGracefully:
     """Test that ContextManager failures follow graceful degradation."""
 
@@ -742,7 +795,7 @@ class TestContextFailureDegradesGracefully:
             system_instructions="System",
             current_user_message="Test",
             recent_messages=(("m1", "user", "Hello"),),
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
 
@@ -763,7 +816,7 @@ class TestContextFailureDegradesGracefully:
             system_instructions="System",
             current_user_message="Test",
             recent_messages=(),
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
 
@@ -787,13 +840,16 @@ class TestContextFailureDegradesGracefully:
 
         # With small budget, compression would be needed
         from friday.context.models import ContextBudget
-        cm._budget = ContextBudget(max_input_units=200, reserved_output_units=50, safety_margin=25)
+
+        cm._budget = ContextBudget(
+            max_input_units=200, reserved_output_units=50, safety_margin=25
+        )
 
         snapshot = cm.assemble(
             system_instructions="S",
             current_user_message="C",
             recent_messages=older,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
 
@@ -805,6 +861,7 @@ class TestContextFailureDegradesGracefully:
 # ======================================================================
 # Test: Existing LiveKit LLM Path Unchanged
 # ======================================================================
+
 
 class TestLiveKitLLMPathUnchanged:
     """Test that the LLM still receives tools and the pipeline is intact."""
@@ -837,6 +894,7 @@ class TestLiveKitLLMPathUnchanged:
 # Integration Test: Memory + Tool History → Context → Fake LLM
 # ======================================================================
 
+
 class FakeLLM:
     """Fake LiveKit LLM: records the ChatContext it receives via chat()."""
 
@@ -855,9 +913,16 @@ class TestIntegrationMemoryAndToolsToLLM:
         from livekit.agents.llm import ChatMessage
 
         session = AssistantSession()
-        fake_memory = FakeMemoryProvider(memories=[make_memory("User prefers Vim.", "mem-1")])
+        fake_memory = FakeMemoryProvider(
+            memories=[make_memory("User prefers Vim.", "mem-1")]
+        )
         fake_project = FakeProjectProvider(
-            context=ProjectContext(context_md="Project: PostLeaf", state_json="", facts_md="", decisions_md="")
+            context=ProjectContext(
+                context_md="Project: PostLeaf",
+                state_json="",
+                facts_md="",
+                decisions_md="",
+            )
         )
         session._context_manager = ContextManager(
             memory_manager=fake_memory,
@@ -881,7 +946,11 @@ class TestIntegrationMemoryAndToolsToLLM:
         llm.chat(turn_ctx)
 
         assert len(llm.received) == 1
-        contents = " ".join(item.text_content or "" for item in llm.received[0].items if item.type == "message")
+        contents = " ".join(
+            item.text_content or ""
+            for item in llm.received[0].items
+            if item.type == "message"
+        )
         assert "F.R.I.D.A.Y." in contents
         assert "User prefers Vim." in contents
         assert "Project: PostLeaf" in contents
@@ -902,8 +971,12 @@ class TestIntegrationMemoryAndToolsToLLM:
         )
 
         turn_ctx = make_turn_context((("msg-1", "user", "Please inspect the file"),))
-        fc = FunctionCall(call_id="call-1", name="read_file", arguments='{"path": "/tmp/x"}')
-        fco = FunctionCallOutput(call_id="call-1", name="read_file", output="File content", is_error=False)
+        fc = FunctionCall(
+            call_id="call-1", name="read_file", arguments='{"path": "/tmp/x"}'
+        )
+        fco = FunctionCallOutput(
+            call_id="call-1", name="read_file", output="File content", is_error=False
+        )
         turn_ctx.insert(fc)
         turn_ctx.insert(fco)
         turn_ctx.add_message(role="assistant", content=["Here it is."])

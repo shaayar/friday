@@ -29,9 +29,15 @@ class TestMemoryManager:
         """Create a MemoryManager with mock storage."""
         return MemoryManager(mock_storage)
 
-    def test_create_conversation_delegates(self, memory_manager: MemoryManager, mock_storage: Mock) -> None:
+    def test_create_conversation_delegates(
+        self, memory_manager: MemoryManager, mock_storage: Mock
+    ) -> None:
         """Test that create_conversation delegates to storage."""
-        expected = Conversation(id=1, created_at="2024-01-01T00:00:00.000000+00:00", updated_at="2024-01-01T00:00:00.000000+00:00")
+        expected = Conversation(
+            id=1,
+            created_at="2024-01-01T00:00:00.000000+00:00",
+            updated_at="2024-01-01T00:00:00.000000+00:00",
+        )
         mock_storage.create_conversation.return_value = expected
 
         result = memory_manager.create_conversation()
@@ -39,7 +45,9 @@ class TestMemoryManager:
         assert result is expected
         mock_storage.create_conversation.assert_called_once()
 
-    def test_save_message_delegates(self, memory_manager: MemoryManager, mock_storage: Mock) -> None:
+    def test_save_message_delegates(
+        self, memory_manager: MemoryManager, mock_storage: Mock
+    ) -> None:
         """Test that save_message delegates to storage."""
         expected = Message(
             id=1,
@@ -55,9 +63,15 @@ class TestMemoryManager:
         assert result is expected
         mock_storage.save_message.assert_called_once_with(1, "user", "Hello")
 
-    def test_get_conversation_delegates(self, memory_manager: MemoryManager, mock_storage: Mock) -> None:
+    def test_get_conversation_delegates(
+        self, memory_manager: MemoryManager, mock_storage: Mock
+    ) -> None:
         """Test that get_conversation delegates to storage."""
-        expected = Conversation(id=1, created_at="2024-01-01T00:00:00.000000+00:00", updated_at="2024-01-01T00:00:00.000000+00:00")
+        expected = Conversation(
+            id=1,
+            created_at="2024-01-01T00:00:00.000000+00:00",
+            updated_at="2024-01-01T00:00:00.000000+00:00",
+        )
         mock_storage.get_conversation.return_value = expected
 
         result = memory_manager.get_conversation(1)
@@ -65,7 +79,9 @@ class TestMemoryManager:
         assert result is expected
         mock_storage.get_conversation.assert_called_once_with(1)
 
-    def test_get_recent_messages_delegates(self, memory_manager: MemoryManager, mock_storage: Mock) -> None:
+    def test_get_recent_messages_delegates(
+        self, memory_manager: MemoryManager, mock_storage: Mock
+    ) -> None:
         """Test that get_recent_messages delegates to storage."""
         expected = [
             Message(
@@ -83,7 +99,9 @@ class TestMemoryManager:
         assert result is expected
         mock_storage.get_recent_messages.assert_called_once_with(1, 10)
 
-    def test_get_recent_messages_default_limit(self, memory_manager: MemoryManager, mock_storage: Mock) -> None:
+    def test_get_recent_messages_default_limit(
+        self, memory_manager: MemoryManager, mock_storage: Mock
+    ) -> None:
         """Test that get_recent_messages uses default limit."""
         mock_storage.get_recent_messages.return_value = []
 
@@ -137,7 +155,9 @@ class FakeConversationStore:
     def get_conversation(self, conversation_id: int) -> Conversation | None:
         return self._conversations.get(conversation_id)
 
-    def get_recent_messages(self, conversation_id: int, limit: int = 20) -> list[Message]:
+    def get_recent_messages(
+        self, conversation_id: int, limit: int = 20
+    ) -> list[Message]:
         messages = self._messages.get(conversation_id, [])
         return messages[-limit:]
 
@@ -184,7 +204,9 @@ class TestMemoryManagerWithFakeStore:
         assert retrieved.created_at == created.created_at
         assert retrieved.updated_at == created.updated_at
 
-    def test_get_nonexistent_conversation_fake_store(self, memory: MemoryManager) -> None:
+    def test_get_nonexistent_conversation_fake_store(
+        self, memory: MemoryManager
+    ) -> None:
         """Test retrieving a non-existent conversation with fake store."""
         result = memory.get_conversation(99999)
         assert result is None
@@ -194,7 +216,9 @@ class TestMemoryManagerWithFakeStore:
         conversation = memory.create_conversation()
 
         for i in range(5):
-            memory.save_message(conversation.id, "user" if i % 2 == 0 else "assistant", f"Message {i}")
+            memory.save_message(
+                conversation.id, "user" if i % 2 == 0 else "assistant", f"Message {i}"
+            )
 
         messages = memory.get_recent_messages(conversation.id, limit=3)
 
@@ -203,7 +227,9 @@ class TestMemoryManagerWithFakeStore:
         assert messages[1].content == "Message 3"
         assert messages[2].content == "Message 4"
 
-    def test_get_recent_messages_default_limit_fake_store(self, memory: MemoryManager) -> None:
+    def test_get_recent_messages_default_limit_fake_store(
+        self, memory: MemoryManager
+    ) -> None:
         """Test default limit of 20 messages with fake store."""
         conversation = memory.create_conversation()
 
@@ -216,12 +242,15 @@ class TestMemoryManagerWithFakeStore:
         assert messages[0].content == "Message 5"
         assert messages[-1].content == "Message 24"
 
-    def test_message_updates_conversation_timestamp_fake_store(self, memory: MemoryManager) -> None:
+    def test_message_updates_conversation_timestamp_fake_store(
+        self, memory: MemoryManager
+    ) -> None:
         """Test that saving a message updates conversation's updated_at with fake store."""
         conversation = memory.create_conversation()
         original_updated_at = conversation.updated_at
 
         import time
+
         time.sleep(0.01)
 
         memory.save_message(conversation.id, "user", "Test message")
@@ -231,7 +260,9 @@ class TestMemoryManagerWithFakeStore:
         assert updated_conversation.updated_at > original_updated_at
         assert updated_conversation.created_at == original_updated_at
 
-    def test_multiple_conversations_isolated_fake_store(self, memory: MemoryManager) -> None:
+    def test_multiple_conversations_isolated_fake_store(
+        self, memory: MemoryManager
+    ) -> None:
         """Test that multiple conversations are isolated in fake store."""
         conv1 = memory.create_conversation()
         conv2 = memory.create_conversation()
@@ -299,7 +330,9 @@ class TestMemoryManagerWithSQLiteStore:
         assert retrieved.created_at == created.created_at
         assert retrieved.updated_at == created.updated_at
 
-    def test_get_nonexistent_conversation_integration(self, memory: MemoryManager) -> None:
+    def test_get_nonexistent_conversation_integration(
+        self, memory: MemoryManager
+    ) -> None:
         """Test retrieving a non-existent conversation."""
         result = memory.get_conversation(99999)
         assert result is None
@@ -309,7 +342,9 @@ class TestMemoryManagerWithSQLiteStore:
         conversation = memory.create_conversation()
 
         for i in range(5):
-            memory.save_message(conversation.id, "user" if i % 2 == 0 else "assistant", f"Message {i}")
+            memory.save_message(
+                conversation.id, "user" if i % 2 == 0 else "assistant", f"Message {i}"
+            )
 
         messages = memory.get_recent_messages(conversation.id, limit=3)
 
@@ -318,7 +353,9 @@ class TestMemoryManagerWithSQLiteStore:
         assert messages[1].content == "Message 3"
         assert messages[2].content == "Message 4"
 
-    def test_get_recent_messages_default_limit_integration(self, memory: MemoryManager) -> None:
+    def test_get_recent_messages_default_limit_integration(
+        self, memory: MemoryManager
+    ) -> None:
         """Test default limit of 20 messages."""
         conversation = memory.create_conversation()
 
@@ -331,12 +368,15 @@ class TestMemoryManagerWithSQLiteStore:
         assert messages[0].content == "Message 5"
         assert messages[-1].content == "Message 24"
 
-    def test_message_updates_conversation_timestamp_integration(self, memory: MemoryManager) -> None:
+    def test_message_updates_conversation_timestamp_integration(
+        self, memory: MemoryManager
+    ) -> None:
         """Test that saving a message updates conversation's updated_at."""
         conversation = memory.create_conversation()
         original_updated_at = conversation.updated_at
 
         import time
+
         time.sleep(0.01)
 
         memory.save_message(conversation.id, "user", "Test message")

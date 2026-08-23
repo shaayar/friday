@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from friday.ai.providers import LiveKitLLMBackend
 from friday.compaction.compactor import CompactionResult
 from friday.compaction.models import CompactionItem, ConversationCompaction
@@ -34,7 +33,9 @@ class TestPromotionRuntimeIntegration:
     """Tests for M7.1b.4.2 — Runtime Compaction → Memory Promotion."""
 
     @pytest.mark.asyncio
-    async def test_successful_compaction_triggers_promotion(self, temp_friday_home) -> None:
+    async def test_successful_compaction_triggers_promotion(
+        self, temp_friday_home
+    ) -> None:
         """Successful compaction triggers promotion background task."""
 
         class FakeLLM:
@@ -44,13 +45,13 @@ class TestPromotionRuntimeIntegration:
             async def complete(self, system: str, user: str) -> str:
                 self.calls += 1
                 if "persistent compaction" in system:
-                    return '''{
+                    return """{
   "summary": "User prefers Vim for editing.",
   "facts": [{"content": "User uses Vim as editor.", "source_message_ids": [1, 2]}],
   "decisions": [],
   "changes": [],
   "open_questions": []
-}'''
+}"""
                 return "[]"
 
         fake_llm = FakeLLM()
@@ -80,13 +81,19 @@ class TestPromotionRuntimeIntegration:
                 summary="Test compaction",
                 facts=(fact_item,),
             )
-            return CompactionResult(compacted=True, compaction=compaction, remaining_messages=0)
+            return CompactionResult(
+                compacted=True, compaction=compaction, remaining_messages=0
+            )
 
         session._compactor.compact = mock_compact
 
         await session.start()
-        session.conversation_store.save_message(session.conversation_id, "user", "I use Vim.")
-        session.conversation_store.save_message(session.conversation_id, "assistant", "Noted.")
+        session.conversation_store.save_message(
+            session.conversation_id, "user", "I use Vim."
+        )
+        session.conversation_store.save_message(
+            session.conversation_id, "assistant", "Noted."
+        )
 
         # Mock the promoter to track calls
         promote_calls = []
@@ -96,14 +103,16 @@ class TestPromotionRuntimeIntegration:
             # Return a promotion result
             return PromotionResult(
                 compaction_id=compaction.compaction_id,
-                items=(PromotionItemResult(
-                    item_id="fact-1",
-                    category=CompactionItemCategory.FACTS,
-                    outcome=PromotionOutcome.PROMOTED,
-                    memory_ids=("mem-1",),
-                    resolution_kind=PromotionResolutionKind.CREATE,
-                    reason="fake",
-                ),),
+                items=(
+                    PromotionItemResult(
+                        item_id="fact-1",
+                        category=CompactionItemCategory.FACTS,
+                        outcome=PromotionOutcome.PROMOTED,
+                        memory_ids=("mem-1",),
+                        resolution_kind=PromotionResolutionKind.CREATE,
+                        reason="fake",
+                    ),
+                ),
             )
 
         session._promoter.promote = mock_promote
@@ -125,13 +134,15 @@ class TestPromotionRuntimeIntegration:
             await session.stop()
 
     @pytest.mark.asyncio
-    async def test_no_compaction_does_not_trigger_promotion(self, temp_friday_home) -> None:
+    async def test_no_compaction_does_not_trigger_promotion(
+        self, temp_friday_home
+    ) -> None:
         """No compaction means no promotion."""
 
         class FakeLLM:
             async def complete(self, system: str, user: str) -> str:
                 if "persistent compaction" in system:
-                    return '''{"summary": "No compaction needed", "facts": [], "decisions": [], "changes": [], "open_questions": []}'''
+                    return """{"summary": "No compaction needed", "facts": [], "decisions": [], "changes": [], "open_questions": []}"""
                 return "[]"
 
         fake_llm = FakeLLM()
@@ -147,7 +158,9 @@ class TestPromotionRuntimeIntegration:
 
         # Mock compactor to return no compaction
         async def mock_compact_no_op(messages, *, conversation_id, force=False):
-            return CompactionResult(compacted=False, compaction=None, remaining_messages=0)
+            return CompactionResult(
+                compacted=False, compaction=None, remaining_messages=0
+            )
 
         session._compactor.compact = mock_compact_no_op
 
@@ -162,7 +175,9 @@ class TestPromotionRuntimeIntegration:
         session._promoter.promote = mock_promote
 
         await session.start()
-        session.conversation_store.save_message(session.conversation_id, "user", "Hello")
+        session.conversation_store.save_message(
+            session.conversation_id, "user", "Hello"
+        )
 
         try:
             session.on_assistant_persisted()
@@ -170,7 +185,9 @@ class TestPromotionRuntimeIntegration:
             while session._background_tasks:
                 await asyncio.sleep(0.01)
 
-            assert len(promote_called) == 0, "Promotion should not be called when no compaction"
+            assert len(promote_called) == 0, (
+                "Promotion should not be called when no compaction"
+            )
 
         finally:
             await session.stop()
@@ -182,13 +199,13 @@ class TestPromotionRuntimeIntegration:
         class FakeLLM:
             async def complete(self, system: str, user: str) -> str:
                 if "persistent compaction" in system:
-                    return '''{
+                    return """{
   "summary": "Project setup",
   "facts": [{"content": "Project uses Python.", "source_message_ids": [1, 2]}],
   "decisions": [{"content": "Use SQLite.", "source_message_ids": [2, 3]}],
   "changes": [],
   "open_questions": []
-}'''
+}"""
                 return "[]"
 
         fake_llm = FakeLLM()
@@ -231,7 +248,9 @@ class TestPromotionRuntimeIntegration:
         )
 
         async def mock_compact(messages, *, conversation_id, force=False):
-            return CompactionResult(compacted=True, compaction=compaction, remaining_messages=0)
+            return CompactionResult(
+                compacted=True, compaction=compaction, remaining_messages=0
+            )
 
         session._compactor.compact = mock_compact
 
@@ -243,15 +262,31 @@ class TestPromotionRuntimeIntegration:
             return PromotionResult(
                 compaction_id=compaction.compaction_id,
                 items=(
-                    PromotionItemResult(item_id="fact-1", category=CompactionItemCategory.FACTS, outcome=PromotionOutcome.PROMOTED, memory_ids=("mem-1",), resolution_kind=PromotionResolutionKind.CREATE, reason="fake"),
-                    PromotionItemResult(item_id="decision-1", category=CompactionItemCategory.DECISIONS, outcome=PromotionOutcome.PROMOTED, memory_ids=("mem-2",), resolution_kind=PromotionResolutionKind.CREATE, reason="fake"),
+                    PromotionItemResult(
+                        item_id="fact-1",
+                        category=CompactionItemCategory.FACTS,
+                        outcome=PromotionOutcome.PROMOTED,
+                        memory_ids=("mem-1",),
+                        resolution_kind=PromotionResolutionKind.CREATE,
+                        reason="fake",
+                    ),
+                    PromotionItemResult(
+                        item_id="decision-1",
+                        category=CompactionItemCategory.DECISIONS,
+                        outcome=PromotionOutcome.PROMOTED,
+                        memory_ids=("mem-2",),
+                        resolution_kind=PromotionResolutionKind.CREATE,
+                        reason="fake",
+                    ),
                 ),
             )
 
         session._promoter.promote = mock_promote
 
         await session.start()
-        session.conversation_store.save_message(session.conversation_id, "user", "We use Python.")
+        session.conversation_store.save_message(
+            session.conversation_id, "user", "We use Python."
+        )
 
         try:
             session.on_assistant_persisted()

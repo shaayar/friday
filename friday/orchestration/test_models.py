@@ -53,7 +53,10 @@ class TestTaskContract:
         assert contract.objective == "Implement feature"
         assert contract.acceptance_criteria == ("test passes", "lint clean")
         assert contract.inputs == ("repo path", "context")
-        assert contract.allowed_capabilities == (TaskCapability.READ, TaskCapability.WRITE)
+        assert contract.allowed_capabilities == (
+            TaskCapability.READ,
+            TaskCapability.WRITE,
+        )
         assert contract.constraints == ("no external deps",)
         assert contract.timeout == 60.0
         assert contract.project_id == "proj-123"
@@ -130,7 +133,10 @@ class TestTaskContract:
             acceptance_criteria=("c",),
             allowed_capabilities=(TaskCapability.READ, TaskCapability.WRITE),
         )
-        assert contract.allowed_capabilities == (TaskCapability.READ, TaskCapability.WRITE)
+        assert contract.allowed_capabilities == (
+            TaskCapability.READ,
+            TaskCapability.WRITE,
+        )
 
     def test_invalid_capability_rejected(self):
         with pytest.raises(TypeError, match="must be TaskCapability"):
@@ -138,7 +144,10 @@ class TestTaskContract:
                 task_id="task-1",
                 objective="Test",
                 acceptance_criteria=("c",),
-                allowed_capabilities=(TaskCapability.READ, "write"),  # mix of enum and string
+                allowed_capabilities=(
+                    TaskCapability.READ,
+                    "write",
+                ),  # mix of enum and string
             )
 
     def test_constraints_filtered_and_stripped(self):

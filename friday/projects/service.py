@@ -59,7 +59,9 @@ def build_project_service(
 ) -> ProjectService:
     """Compose a fully-wired ProjectService from FRIDAY home paths."""
     home = Path(friday_home) if friday_home is not None else config.FRIDAY_HOME
-    registry, policy, manager = _build_filesystem(home, Path(registry_path) if registry_path else None)
+    registry, policy, manager = _build_filesystem(
+        home, Path(registry_path) if registry_path else None
+    )
     detector = ProjectDetector(registry)
     active = ActiveProjectManager(home / "active_project.json", registry, detector)
     workspace = ProjectWorkspace(manager, home / "projects")

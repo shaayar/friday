@@ -58,10 +58,17 @@ class RaisingLLM:
         raise RuntimeError("provider down")
 
 
-def extract(compaction_json: str, *, conversation_id: int = 1, llm: FakeLLM | RaisingLLM | None = None):
+def extract(
+    compaction_json: str,
+    *,
+    conversation_id: int = 1,
+    llm: FakeLLM | RaisingLLM | None = None,
+):
     fake = llm if llm is not None else FakeLLM(compaction_json)
     extractor = ConversationCompactionExtractor(fake)
-    result = asyncio.run(extractor.extract(window(1, 2, 3, 4), conversation_id=conversation_id))
+    result = asyncio.run(
+        extractor.extract(window(1, 2, 3, 4), conversation_id=conversation_id)
+    )
     return result, fake
 
 
@@ -101,7 +108,12 @@ class TestExtraction:
         assert result.first_message_id == 1
         assert result.last_message_id == 4
         assert result.conversation_id == 1
-        for category in (result.facts, result.decisions, result.changes, result.open_questions):
+        for category in (
+            result.facts,
+            result.decisions,
+            result.changes,
+            result.open_questions,
+        ):
             for item in category:
                 assert all(1 <= mid <= 4 for mid in item.source_message_ids)
 
@@ -146,11 +158,15 @@ class TestParsing:
 
     def test_non_list_category_fails_safely(self) -> None:
         with pytest.raises(CompactionOutputError):
-            extract('{"summary": "S.", "facts": "not-a-list", "decisions": [], "changes": [], "open_questions": []}')
+            extract(
+                '{"summary": "S.", "facts": "not-a-list", "decisions": [], "changes": [], "open_questions": []}'
+            )
 
     def test_non_string_summary_fails_safely(self) -> None:
         with pytest.raises(CompactionOutputError):
-            extract('{"summary": 42, "facts": [], "decisions": [], "changes": [], "open_questions": []}')
+            extract(
+                '{"summary": 42, "facts": [], "decisions": [], "changes": [], "open_questions": []}'
+            )
 
     def test_unknown_category_ignored(self) -> None:
         json_text = """{"summary": "S.", "gossip": [{"content": "X.", "source_message_ids": [1]}], "facts": [], "decisions": [], "changes": [], "open_questions": []}"""

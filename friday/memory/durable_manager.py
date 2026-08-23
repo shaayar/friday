@@ -192,11 +192,19 @@ class DurableMemoryManager:
                 if kind is ResolutionKind.REJECT:
                     results.append(None)
                 elif kind is ResolutionKind.INVALIDATE:
+                    # existing_memory_id is guaranteed non-None by Resolution.__post_init__
+                    assert resolution.existing_memory_id is not None
                     results.append(self._apply_invalidate(resolution.existing_memory_id))
                 elif kind is ResolutionKind.CREATE:
+                    # candidate is guaranteed non-None by Resolution.__post_init__
+                    assert candidate is not None
                     memory = candidate_to_memory(candidate)
                     results.append(self._storage.save(memory))
                 elif kind is ResolutionKind.SUPERSEDE:
+                    # candidate and existing_memory_id are guaranteed
+                    # non-None by Resolution.__post_init__
+                    assert candidate is not None
+                    assert resolution.existing_memory_id is not None
                     memory = candidate_to_memory(candidate)
                     saved_new, _ = self._apply_supersede(resolution.existing_memory_id, memory)
                     results.append(saved_new)

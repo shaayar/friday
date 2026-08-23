@@ -19,7 +19,9 @@ def service(tmp_path: Path) -> ProjectService:
     return build_project_service(tmp_path / "friday")
 
 
-def test_register_creates_project_and_seeds_workspace(service: ProjectService, tmp_path: Path) -> None:
+def test_register_creates_project_and_seeds_workspace(
+    service: ProjectService, tmp_path: Path
+) -> None:
     root = tmp_path / "project"
     root.mkdir()
 
@@ -29,11 +31,19 @@ def test_register_creates_project_and_seeds_workspace(service: ProjectService, t
     assert project.name == "app"
     workspace_path = service.get_workspace(project.id).project_path(project.id)
     assert workspace_path.is_dir()
-    for filename in ("context.md", "facts.md", "decisions.md", "changelog.md", "state.json"):
+    for filename in (
+        "context.md",
+        "facts.md",
+        "decisions.md",
+        "changelog.md",
+        "state.json",
+    ):
         assert (workspace_path / filename).is_file()
 
 
-def test_register_validates_root_exists(service: ProjectService, tmp_path: Path) -> None:
+def test_register_validates_root_exists(
+    service: ProjectService, tmp_path: Path
+) -> None:
     with pytest.raises(RootNotFoundError):
         service.register(tmp_path / "missing")
 

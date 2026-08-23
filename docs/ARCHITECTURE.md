@@ -736,17 +736,17 @@ Goal: Build the smallest complete orchestration loop using one worker.
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| M8.1.1 | Task Contract domain model | NOT STARTED |
-| M8.1.2 | In-memory Agent Registry | NOT STARTED |
-| M8.1.3 | Worker Adapter protocol + OpenCode adapter | NOT STARTED |
-| M8.1.4 | Deterministic Verifier | NOT STARTED |
-| M8.1.5 | Orchestration Loop | NOT STARTED |
-| M8.1.6 | Retry & Escalation | NOT STARTED |
-| M8.1.7 | M8.1 Integration & Verification | NOT STARTED |
+| M8.1.1 | Task Contract domain model | COMPLETE |
+| M8.1.2 | In-memory Agent Registry | COMPLETE |
+| M8.1.3 | Worker Adapter protocol + Hermes adapter | COMPLETE |
+| M8.1.4 | Deterministic Verifier | COMPLETE |
+| M8.1.5 | Orchestration Loop | COMPLETE |
+| M8.1.6 | Retry & Escalation | COMPLETE |
+| M8.1.7 | M8.1 Integration & Verification | COMPLETE |
 
 **M8.1 Scope:**
 
-- One hard-coded worker (OpenCode adapter selected for M8.1 implementation)
+- One hard-coded worker (Hermes adapter selected for M8.1 implementation)
 - In-memory registry, no persistence
 - Synchronous execution
 - Deterministic verifier only
@@ -756,7 +756,6 @@ Goal: Build the smallest complete orchestration loop using one worker.
 
 **M8.1 Explicitly Defers:**
 
-- Hermes integration
 - Persistent task state
 - Reassignment
 - Local machine control

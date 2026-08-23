@@ -9,7 +9,11 @@ through the ``FileSystemManager`` capability layer.
 
 from friday.projects.active import ActiveProjectManager
 from friday.projects.detector import ProjectDetector
-from friday.projects.service import ProjectService, build_filesystem_manager, build_project_service
+from friday.projects.service import (
+    ProjectService,
+    build_filesystem_manager,
+    build_project_service,
+)
 from friday.projects.workspace import ProjectWorkspace
 
 __all__ = [

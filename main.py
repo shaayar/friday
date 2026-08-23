@@ -2,6 +2,7 @@
 main.py — Entry Point
 """
 
+
 def main():
     print("Hello from friday!")
 

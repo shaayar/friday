@@ -39,8 +39,12 @@ CATEGORY_ITEMS = {
 }
 
 
-def make_item(item_id: str, content: str, source_message_ids: tuple[int, ...]) -> CompactionItem:
-    return CompactionItem(item_id=item_id, content=content, source_message_ids=source_message_ids)
+def make_item(
+    item_id: str, content: str, source_message_ids: tuple[int, ...]
+) -> CompactionItem:
+    return CompactionItem(
+        item_id=item_id, content=content, source_message_ids=source_message_ids
+    )
 
 
 def make_compaction(
@@ -97,7 +101,10 @@ def seeded(db_path: Path):
     )
     with SQLiteCompactionStore(db_path) as comp_store:
         comp_store.save(compaction)
-    return {"conversation_id": conversation.id, "compaction_id": compaction.compaction_id}
+    return {
+        "conversation_id": conversation.id,
+        "compaction_id": compaction.compaction_id,
+    }
 
 
 @pytest.fixture
@@ -108,7 +115,9 @@ def store(db_path: Path):
 
 
 class TestSaveGet:
-    def test_save_pending_promotion(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_save_pending_promotion(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         promotion = make_pending(compaction_id=seeded["compaction_id"])
         returned = store.save(promotion)
         assert returned == promotion
@@ -129,7 +138,9 @@ class TestSaveGet:
     def test_get_missing_returns_none(self, store: SQLitePromotionStore) -> None:
         assert store.get("no-such-item") is None
 
-    def test_save_does_not_mutate_domain_object(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_save_does_not_mutate_domain_object(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         promotion = make_pending(compaction_id=seeded["compaction_id"])
         returned = store.save(promotion)
         assert returned == promotion
@@ -142,24 +153,35 @@ class TestStatusRoundTrips:
         [(c, ids[0]) for c, ids in CATEGORY_ITEMS.items()],
     )
     def test_all_categories_round_trip(
-        self, store: SQLitePromotionStore, seeded: dict, category: CompactionItemCategory, item_id: str
+        self,
+        store: SQLitePromotionStore,
+        seeded: dict,
+        category: CompactionItemCategory,
+        item_id: str,
     ) -> None:
-        promotion = make_pending(item_id=item_id, category=category, compaction_id=seeded["compaction_id"])
+        promotion = make_pending(
+            item_id=item_id, category=category, compaction_id=seeded["compaction_id"]
+        )
         store.save(promotion)
         retrieved = store.get(item_id)
         assert retrieved is not None
         assert retrieved.category is category
 
-    def test_pending_round_trip(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_pending_round_trip(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         promotion = make_pending(compaction_id=seeded["compaction_id"])
         store.save(promotion)
         assert store.get("item-f1").status is PromotionStatus.PENDING
         assert store.get("item-f1").resolved_memory_ids == ()
 
-    def test_promoted_round_trip(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = (
-            make_pending(compaction_id=seeded["compaction_id"])
-            .mark_promoted(("mem-2", "mem-1"), resolution_kind=PromotionResolutionKind.CREATE, updated_at=LATER)
+    def test_promoted_round_trip(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_promoted(
+            ("mem-2", "mem-1"),
+            resolution_kind=PromotionResolutionKind.CREATE,
+            updated_at=LATER,
         )
         store.save(promotion)
         retrieved = store.get("item-f1")
@@ -169,43 +191,64 @@ class TestStatusRoundTrips:
         assert retrieved.resolution_kind is PromotionResolutionKind.CREATE
         assert retrieved.updated_at == LATER
 
-    def test_rejected_round_trip(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_rejected("duplicate", updated_at=LATER)
+    def test_rejected_round_trip(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_rejected(
+            "duplicate", updated_at=LATER
+        )
         store.save(promotion)
         retrieved = store.get("item-f1")
         assert retrieved is not None
         assert retrieved.status is PromotionStatus.REJECTED
         assert retrieved.resolution_reason == "duplicate"
 
-    def test_resolution_kind_round_trip(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = (
-            make_pending(compaction_id=seeded["compaction_id"])
-            .mark_promoted(("mem-1",), resolution_kind=PromotionResolutionKind.SUPERSEDE, updated_at=LATER)
+    def test_resolution_kind_round_trip(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_promoted(
+            ("mem-1",),
+            resolution_kind=PromotionResolutionKind.SUPERSEDE,
+            updated_at=LATER,
         )
         store.save(promotion)
         assert store.get("item-f1").resolution_kind is PromotionResolutionKind.SUPERSEDE
 
-    def test_retry_count_round_trip(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = make_pending(compaction_id=seeded["compaction_id"]).record_transient_failure("timeout", updated_at=LATER)
+    def test_retry_count_round_trip(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(
+            compaction_id=seeded["compaction_id"]
+        ).record_transient_failure("timeout", updated_at=LATER)
         store.save(promotion)
         retrieved = store.get("item-f1")
         assert retrieved is not None
         assert retrieved.retry_count == 1
         assert retrieved.last_error == "timeout"
 
-    def test_last_error_round_trip(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = make_pending(compaction_id=seeded["compaction_id"]).record_transient_failure("memory.db unavailable", updated_at=LATER)
+    def test_last_error_round_trip(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(
+            compaction_id=seeded["compaction_id"]
+        ).record_transient_failure("memory.db unavailable", updated_at=LATER)
         store.save(promotion)
         assert store.get("item-f1").last_error == "memory.db unavailable"
 
-    def test_timestamps_round_trip(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_rejected("nope", updated_at=LATER)
+    def test_timestamps_round_trip(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_rejected(
+            "nope", updated_at=LATER
+        )
         store.save(promotion)
         retrieved = store.get("item-f1")
         assert retrieved.created_at == NOW
         assert retrieved.updated_at == LATER
 
-    def test_timezone_preserved(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_timezone_preserved(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         promotion = make_pending(compaction_id=seeded["compaction_id"])
         store.save(promotion)
         retrieved = store.get("item-f1")
@@ -214,13 +257,26 @@ class TestStatusRoundTrips:
 
 
 class TestListing:
-    def test_list_for_compaction(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        for item_id, category in (("item-f1", CompactionItemCategory.FACTS), ("item-d1", CompactionItemCategory.DECISIONS)):
-            store.save(make_pending(item_id=item_id, category=category, compaction_id=seeded["compaction_id"]))
+    def test_list_for_compaction(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        for item_id, category in (
+            ("item-f1", CompactionItemCategory.FACTS),
+            ("item-d1", CompactionItemCategory.DECISIONS),
+        ):
+            store.save(
+                make_pending(
+                    item_id=item_id,
+                    category=category,
+                    compaction_id=seeded["compaction_id"],
+                )
+            )
         entries = store.list_for_compaction(seeded["compaction_id"])
         assert {e.item_id for e in entries} == {"item-f1", "item-d1"}
 
-    def test_multiple_compactions_isolated(self, store: SQLitePromotionStore, db_path: Path, seeded: dict) -> None:
+    def test_multiple_compactions_isolated(
+        self, store: SQLitePromotionStore, db_path: Path, seeded: dict
+    ) -> None:
         with SQLiteCompactionStore(db_path) as comp_store:
             compaction_b = make_compaction(
                 compaction_id="comp-2",
@@ -228,14 +284,24 @@ class TestListing:
                 suffix="b",
             )
             comp_store.save(compaction_b)
-        store.save(make_pending(item_id="item-f1", compaction_id=seeded["compaction_id"]))
+        store.save(
+            make_pending(item_id="item-f1", compaction_id=seeded["compaction_id"])
+        )
         store.save(make_pending(item_id="item-f1b", compaction_id="comp-2"))
-        assert [e.item_id for e in store.list_for_compaction(seeded["compaction_id"])] == ["item-f1"]
+        assert [
+            e.item_id for e in store.list_for_compaction(seeded["compaction_id"])
+        ] == ["item-f1"]
         assert [e.item_id for e in store.list_for_compaction("comp-2")] == ["item-f1b"]
 
-    def test_deterministic_ordering(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_deterministic_ordering(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         for i, (item_id, category) in enumerate(
-            (("item-c1", CompactionItemCategory.CHANGES), ("item-d1", CompactionItemCategory.DECISIONS), ("item-q1", CompactionItemCategory.OPEN_QUESTIONS))
+            (
+                ("item-c1", CompactionItemCategory.CHANGES),
+                ("item-d1", CompactionItemCategory.DECISIONS),
+                ("item-q1", CompactionItemCategory.OPEN_QUESTIONS),
+            )
         ):
             created = NOW.replace(microsecond=i + 1)
             store.save(
@@ -251,7 +317,9 @@ class TestListing:
 
 
 class TestTransitionsPersisted:
-    def test_state_transition_persisted_via_replace(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_state_transition_persisted_via_replace(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         pending = make_pending(compaction_id=seeded["compaction_id"])
         store.save(pending)
         rejected = pending.mark_rejected("duplicate", updated_at=LATER)
@@ -261,7 +329,9 @@ class TestTransitionsPersisted:
         assert retrieved.status is PromotionStatus.REJECTED
         assert retrieved.resolution_reason == "duplicate"
 
-    def test_reconsideration_persisted(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_reconsideration_persisted(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         promotion = make_pending(compaction_id=seeded["compaction_id"])
         store.save(promotion)
         rejected = promotion.mark_rejected("duplicate", updated_at=LATER)
@@ -273,7 +343,9 @@ class TestTransitionsPersisted:
         assert retrieved.status is PromotionStatus.PENDING
         assert retrieved.resolution_reason == "duplicate"
 
-    def test_transient_failure_remains_pending(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_transient_failure_remains_pending(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         promotion = make_pending(compaction_id=seeded["compaction_id"])
         store.save(promotion)
         failed = promotion.record_transient_failure("boom", updated_at=LATER)
@@ -284,22 +356,30 @@ class TestTransitionsPersisted:
         assert retrieved.retry_count == 1
         assert retrieved.last_error == "boom"
 
-    def test_replace_missing_raises_not_found(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_replace_missing_raises_not_found(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         with pytest.raises(PromotionNotFoundError):
             store.replace(make_pending(compaction_id=seeded["compaction_id"]))
 
 
 class TestDuplicates:
-    def test_duplicate_item_id_rejected(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_duplicate_item_id_rejected(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         store.save(make_pending(compaction_id=seeded["compaction_id"]))
         with pytest.raises(PromotionAlreadyExistsError):
             store.save(make_pending(compaction_id=seeded["compaction_id"]))
 
-    def test_raw_sql_duplicate_rejected_by_unique_constraint(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_raw_sql_duplicate_rejected_by_unique_constraint(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         store.save(make_pending(compaction_id=seeded["compaction_id"]))
         with pytest.raises(PromotionAlreadyExistsError):
             store.save(
-                make_pending(compaction_id=seeded["compaction_id"]).mark_rejected("dup", updated_at=LATER)
+                make_pending(compaction_id=seeded["compaction_id"]).mark_rejected(
+                    "dup", updated_at=LATER
+                )
             )
 
     def test_save_for_unknown_item_fails(self, store: SQLitePromotionStore) -> None:
@@ -308,32 +388,38 @@ class TestDuplicates:
 
 
 class TestCorruption:
-    def test_corrupt_status_rejected(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_corrupt_status_rejected(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         store.save(make_pending(compaction_id=seeded["compaction_id"]))
         self._bypass_check_update(store, "status = 'archived'", "item-f1")
         with pytest.raises(PromotionCorruptError, match="Invalid promotion row"):
             store.get("item-f1")
 
-    def test_corrupt_category_rejected(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_corrupt_category_rejected(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         store.save(make_pending(compaction_id=seeded["compaction_id"]))
         self._bypass_check_update(store, "category = 'gossip'", "item-f1")
         with pytest.raises(PromotionCorruptError, match="Invalid promotion row"):
             store.get("item-f1")
 
-    def test_corrupt_resolution_kind_rejected(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = (
-            make_pending(compaction_id=seeded["compaction_id"])
-            .mark_promoted(("mem-1",), resolution_kind=PromotionResolutionKind.CREATE, updated_at=LATER)
+    def test_corrupt_resolution_kind_rejected(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_promoted(
+            ("mem-1",), resolution_kind=PromotionResolutionKind.CREATE, updated_at=LATER
         )
         store.save(promotion)
         self._bypass_check_update(store, "resolution_kind = 'demote'", "item-f1")
         with pytest.raises(PromotionCorruptError, match="Invalid promotion row"):
             store.get("item-f1")
 
-    def test_malformed_memory_id_rejected(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = (
-            make_pending(compaction_id=seeded["compaction_id"])
-            .mark_promoted(("mem-1",), updated_at=LATER)
+    def test_malformed_memory_id_rejected(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_promoted(
+            ("mem-1",), updated_at=LATER
         )
         store.save(promotion)
         with store._conn:
@@ -344,22 +430,29 @@ class TestCorruption:
         with pytest.raises(PromotionCorruptError, match="resolved memory ID"):
             store.get("item-f1")
 
-    def test_invalid_persisted_domain_state_rejected(self, store: SQLitePromotionStore, seeded: dict) -> None:
-        promotion = (
-            make_pending(compaction_id=seeded["compaction_id"])
-            .mark_promoted(("mem-1",), updated_at=LATER)
+    def test_invalid_persisted_domain_state_rejected(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
+        promotion = make_pending(compaction_id=seeded["compaction_id"]).mark_promoted(
+            ("mem-1",), updated_at=LATER
         )
         store.save(promotion)
         with store._conn:
-            store._conn.execute("DELETE FROM promotion_resolved_memory_ids WHERE item_id = ?", ("item-f1",))
+            store._conn.execute(
+                "DELETE FROM promotion_resolved_memory_ids WHERE item_id = ?",
+                ("item-f1",),
+            )
         with pytest.raises(PromotionCorruptError, match="Invalid promotion row"):
             store.get("item-f1")
 
     @staticmethod
-    def _bypass_check_update(store: SQLitePromotionStore, assignment: str, item_id: str) -> None:
+    def _bypass_check_update(
+        store: SQLitePromotionStore, assignment: str, item_id: str
+    ) -> None:
         store._conn.execute("PRAGMA ignore_check_constraints = ON")
         store._conn.execute(
-            f"UPDATE compaction_promotions SET {assignment} WHERE item_id = ?", (item_id,)
+            f"UPDATE compaction_promotions SET {assignment} WHERE item_id = ?",
+            (item_id,),
         )
         store._conn.execute("PRAGMA ignore_check_constraints = OFF")
 
@@ -372,24 +465,36 @@ class TestDurability:
             retrieved = reopened.get("item-f1")
             assert retrieved is not None
             assert retrieved.status is PromotionStatus.PENDING
-            assert [e.item_id for e in reopened.list_for_compaction(seeded["compaction_id"])] == ["item-f1"]
+            assert [
+                e.item_id for e in reopened.list_for_compaction(seeded["compaction_id"])
+            ] == ["item-f1"]
 
 
 class TestCascade:
-    def test_compaction_delete_cascades_to_promotions(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_compaction_delete_cascades_to_promotions(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         store.save(make_pending(compaction_id=seeded["compaction_id"]))
         with store._conn:
-            store._conn.execute("DELETE FROM conversation_compactions WHERE compaction_id = ?", (seeded["compaction_id"],))
+            store._conn.execute(
+                "DELETE FROM conversation_compactions WHERE compaction_id = ?",
+                (seeded["compaction_id"],),
+            )
         assert store.get("item-f1") is None
         child_count = store._conn.execute(
-            "SELECT COUNT(*) FROM promotion_resolved_memory_ids WHERE item_id = ?", ("item-f1",)
+            "SELECT COUNT(*) FROM promotion_resolved_memory_ids WHERE item_id = ?",
+            ("item-f1",),
         ).fetchone()[0]
         assert child_count == 0
 
-    def test_item_delete_cascades_to_promotion(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_item_delete_cascades_to_promotion(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         store.save(make_pending(compaction_id=seeded["compaction_id"]))
         with store._conn:
-            store._conn.execute("DELETE FROM compaction_items WHERE item_id = ?", ("item-f1",))
+            store._conn.execute(
+                "DELETE FROM compaction_items WHERE item_id = ?", ("item-f1",)
+            )
         assert store.get("item-f1") is None
 
 
@@ -428,6 +533,8 @@ class TestApiShape:
     def test_no_generic_update_api(self, store: SQLitePromotionStore) -> None:
         assert not hasattr(store, "update")
 
-    def test_get_is_item_id_keyed(self, store: SQLitePromotionStore, seeded: dict) -> None:
+    def test_get_is_item_id_keyed(
+        self, store: SQLitePromotionStore, seeded: dict
+    ) -> None:
         store.save(make_pending(compaction_id=seeded["compaction_id"]))
         assert store.get("item-f1") is not None

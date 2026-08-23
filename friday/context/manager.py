@@ -141,12 +141,12 @@ class ContextManager:
         system_instructions: str,
         current_user_message: str | None,
         recent_messages: Sequence[Message],
-        conversation_id: str | int | None,
+        _conversation_id: str | int | None,
         active_project_id: str | None,
     ) -> ContextSnapshot:
         """Assemble a context snapshot for the current request.
 
-        ``conversation_id`` is reserved for provenance; retrieval is scoped
+        ``_conversation_id`` is reserved for provenance; retrieval is scoped
         to the active project and the user, not to a single conversation.
         """
         now = _utc_now()
@@ -177,7 +177,15 @@ class ContextManager:
         if project_text:
             parts.append(_Part(4, "project_context", project_text, 3))
         if memories:
-            parts.append(_Part(5, "durable_memories", _render_memories(memories), 2, data=tuple(memories)))
+            parts.append(
+                _Part(
+                    5,
+                    "durable_memories",
+                    _render_memories(memories),
+                    2,
+                    data=tuple(memories),
+                )
+            )
 
         used = sum(estimate_units(part.text) for part in parts)
 
@@ -240,7 +248,9 @@ class ContextManager:
     # Durable memory retrieval (isolated)
     # ------------------------------------------------------------------
 
-    def _retrieve_memories(self, project_id: str | None, query_text: str, now: datetime) -> list[Memory]:
+    def _retrieve_memories(
+        self, project_id: str | None, query_text: str, now: datetime
+    ) -> list[Memory]:
         try:
             active = self._memory_manager.get_active(valid_at=now, limit=_RETRIEVAL_LIMIT)
         except Exception:  # noqa: BLE001 - storage boundary; degrade, never abort
@@ -285,7 +295,12 @@ class ContextManager:
 
         sections = [
             section
-            for section in (context.context_md, context.state_json, context.facts_md, context.decisions_md)
+            for section in (
+                context.context_md,
+                context.state_json,
+                context.facts_md,
+                context.decisions_md,
+            )
             if section
         ]
         if not sections:

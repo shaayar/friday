@@ -14,19 +14,20 @@ Run:
 import logging
 import subprocess
 from datetime import UTC
+from pathlib import Path
 
 from dotenv import load_dotenv
-from livekit.agents import JobContext, WorkerOptions, cli
-from livekit.agents.llm import ChatContext, ChatMessage
-from livekit.agents.voice import Agent, AgentSession
-
-# Plugins
-from livekit.plugins import silero
-
 from friday.ai.prompts import load_system_prompt
 from friday.ai.providers import build_llm, build_llm_backend, build_stt, build_tts
 from friday.config import config
 from friday.core.session import AssistantSession, create_assistant_session
+from livekit.agents import JobContext, WorkerOptions, cli
+from livekit.agents.llm import ChatContext, ChatMessage
+from livekit.agents.voice import Agent, AgentSession
+from livekit.agents.voice.turn import TurnDetectionMode
+
+# Plugins
+from livekit.plugins import silero
 
 # ---------------------------------------------------------------------------
 # Bootstrap
@@ -41,6 +42,7 @@ logger.setLevel(logging.INFO)
 # ---------------------------------------------------------------------------
 # Resolve Windows host IP from WSL
 # ---------------------------------------------------------------------------
+
 
 def _get_windows_host_ip() -> str:
     """Get the Windows host IP by looking at the default network route."""
@@ -60,7 +62,7 @@ def _get_windows_host_ip() -> str:
 
     # Fallback to your original resolv.conf logic if 'ip route' fails
     try:
-        with open("/etc/resolv.conf", "r") as f:
+        with Path("/etc/resolv.conf").open() as f:
             for line in f:
                 if "nameserver" in line:
                     ip = line.split()[1]
@@ -81,6 +83,7 @@ def _mcp_server_url() -> str:
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
+
 
 class FridayAgent(Agent):
     """F.R.I.D.A.Y. - Iron Man-style voice assistant."""
@@ -105,16 +108,19 @@ class FridayAgent(Agent):
     async def on_enter(self) -> None:
         """Greet the user based on the current time of day."""
         from datetime import datetime
+
         hour = datetime.now(UTC).hour  # UTC hour; adjust if local TZ differs
 
         if hour >= 22 or hour < 4:
             greeting_instruction = (
-                "Greet the user with: 'Greetings boss, you're up late at night today. What are you up to?' "
+                "Greet the user with: "
+                "'Greetings boss, you're up late at night today. What are you up to?' "
                 "Maintain a helpful but dry tone."
             )
         elif 4 <= hour < 12:
             greeting_instruction = (
-                "Greet the user with: 'Good morning, boss. Early start today — what are we working on?' "
+                "Greet the user with: "
+                "'Good morning, boss. Early start today — what are we working on?' "
                 "Maintain a helpful but dry tone."
             )
         elif 12 <= hour < 17:
@@ -150,7 +156,8 @@ class FridayAgent(Agent):
 # LiveKit entry point
 # ---------------------------------------------------------------------------
 
-def _turn_detection() -> str:
+
+def _turn_detection() -> TurnDetectionMode:
     return "stt" if config.STT_PROVIDER == "sarvam" else "vad"
 
 
@@ -178,7 +185,7 @@ async def entrypoint(ctx: JobContext) -> None:
     assistant_session = await create_assistant_session(llm_backend=build_llm_backend())
 
     # Store in session userdata for event handlers
-    session = AgentSession(
+    session: AgentSession = AgentSession(
         turn_detection=_turn_detection(),
         min_endpointing_delay=_endpointing_delay(),
     )
@@ -229,6 +236,7 @@ async def entrypoint(ctx: JobContext) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 
@@ -236,6 +244,7 @@ def main() -> None:
 def dev() -> None:
     """Wrapper to run the agent in dev mode automatically."""
     import sys
+
     # If no command was provided, inject 'dev'
     if len(sys.argv) == 1:
         sys.argv.append("dev")

@@ -243,11 +243,7 @@ class MemoryExtractor:
         if isinstance(supplied, list):
             known = {*all_ids}
             resolved = tuple(
-                dict.fromkeys(
-                    str(mid)
-                    for mid in supplied
-                    if str(mid).strip() in known
-                )
+                dict.fromkeys(str(mid) for mid in supplied if str(mid).strip() in known)
             )
             if resolved:
                 return resolved

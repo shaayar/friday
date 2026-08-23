@@ -64,7 +64,9 @@ def test_parent_traversal_denied(policy: PathPolicy, workspace: Path) -> None:
         policy.authorize(evil, "read")
 
 
-def test_symlink_escape_denied(policy: PathPolicy, workspace: Path, tmp_path: Path) -> None:
+def test_symlink_escape_denied(
+    policy: PathPolicy, workspace: Path, tmp_path: Path
+) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.txt").write_text("secret")

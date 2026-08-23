@@ -9,8 +9,17 @@ import pytest
 from friday.compaction.trigger import should_compact
 
 
-def compact(*, count: int = 0, units: int = 0, force: bool = False, message: int = 20, size: int | None = 4000) -> bool:
-    return should_compact(count, units, force=force, message_threshold=message, unit_threshold=size)
+def compact(
+    *,
+    count: int = 0,
+    units: int = 0,
+    force: bool = False,
+    message: int = 20,
+    size: int | None = 4000,
+) -> bool:
+    return should_compact(
+        count, units, force=force, message_threshold=message, unit_threshold=size
+    )
 
 
 class TestMessageTrigger:
@@ -60,17 +69,23 @@ class TestValidation:
     @pytest.mark.parametrize("count", [-1, 1.5, "10", True])
     def test_invalid_message_count_rejected(self, count) -> None:
         with pytest.raises((TypeError, ValueError)):
-            should_compact(count, 0, force=False, message_threshold=20, unit_threshold=4000)
+            should_compact(
+                count, 0, force=False, message_threshold=20, unit_threshold=4000
+            )
 
     @pytest.mark.parametrize("units", [-1, 1.5, "10", True])
     def test_invalid_units_rejected(self, units) -> None:
         with pytest.raises((TypeError, ValueError)):
-            should_compact(0, units, force=False, message_threshold=20, unit_threshold=4000)
+            should_compact(
+                0, units, force=False, message_threshold=20, unit_threshold=4000
+            )
 
     @pytest.mark.parametrize("threshold", [0, -5, 1.5, "20", True])
     def test_invalid_message_threshold_rejected(self, threshold) -> None:
         with pytest.raises((TypeError, ValueError)):
-            should_compact(5, 0, force=False, message_threshold=threshold, unit_threshold=None)
+            should_compact(
+                5, 0, force=False, message_threshold=threshold, unit_threshold=None
+            )
 
     @pytest.mark.parametrize("size", [0, -5, 1.5, "4000", True])
     def test_invalid_size_threshold_rejected(self, size) -> None:
@@ -89,14 +104,22 @@ class TestPurity:
         return [
             line.strip()
             for line in source.splitlines()
-            if line.strip().startswith(("import ", "from ")) and "__future__" not in line
+            if line.strip().startswith(("import ", "from "))
+            and "__future__" not in line
         ]
 
     def test_no_llm_import(self) -> None:
-        assert not any(line.startswith(("import ", "from ")) for line in self._import_lines())
+        assert not any(
+            line.startswith(("import ", "from ")) for line in self._import_lines()
+        )
 
     def test_no_storage_import(self) -> None:
-        assert not any("sqlite" in line or "store" in line for line in self._import_lines())
+        assert not any(
+            "sqlite" in line or "store" in line for line in self._import_lines()
+        )
 
     def test_no_context_import(self) -> None:
-        assert not any("context" in line or "estimate_units" in line for line in self._import_lines())
+        assert not any(
+            "context" in line or "estimate_units" in line
+            for line in self._import_lines()
+        )

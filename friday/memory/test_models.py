@@ -45,7 +45,11 @@ def test_valid_memory_types(memory_type: MemoryType, scope: MemoryScope) -> None
 
 def test_invalid_type_scope_combination() -> None:
     with pytest.raises(ValueError, match="must use scope"):
-        Memory(type=MemoryType.PROJECT_FACT, scope=MemoryScope.USER, content="Invalid scope")
+        Memory(
+            type=MemoryType.PROJECT_FACT,
+            scope=MemoryScope.USER,
+            content="Invalid scope",
+        )
 
 
 @pytest.mark.parametrize("content", ["", "   "])
@@ -59,7 +63,12 @@ def test_invalid_empty_content(content: str) -> None:
     [MemoryStatus.ACTIVE, MemoryStatus.SUPERSEDED, MemoryStatus.INVALIDATED],
 )
 def test_memory_status_values(status: MemoryStatus) -> None:
-    memory = Memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="Status test", status=status)
+    memory = Memory(
+        type=MemoryType.USER_FACT,
+        scope=MemoryScope.USER,
+        content="Status test",
+        status=status,
+    )
 
     assert memory.status is status
 
@@ -112,7 +121,9 @@ def test_supersession_representation() -> None:
         supersedes=old_memory.id,
         project_id="test-project",
     )
-    superseded_old = replace(old_memory, superseded_by=new_memory.id, status=MemoryStatus.SUPERSEDED)
+    superseded_old = replace(
+        old_memory, superseded_by=new_memory.id, status=MemoryStatus.SUPERSEDED
+    )
 
     assert new_memory.supersedes == old_memory.id
     assert superseded_old.superseded_by == new_memory.id
@@ -140,7 +151,12 @@ def test_timestamp_behavior() -> None:
 def test_stable_identity_behavior() -> None:
     first = Memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="First")
     second = Memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="Second")
-    explicit = Memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="Explicit", id="memory-123")
+    explicit = Memory(
+        type=MemoryType.USER_FACT,
+        scope=MemoryScope.USER,
+        content="Explicit",
+        id="memory-123",
+    )
 
     assert first.id
     assert second.id
@@ -149,7 +165,9 @@ def test_stable_identity_behavior() -> None:
 
 
 def test_memory_is_immutable() -> None:
-    memory = Memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="Immutable")
+    memory = Memory(
+        type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="Immutable"
+    )
 
     with pytest.raises(FrozenInstanceError):
         memory.content = "Changed"  # type: ignore[misc]
@@ -157,11 +175,17 @@ def test_memory_is_immutable() -> None:
 
 def test_project_scope_requires_project_id() -> None:
     with pytest.raises(ValueError, match="PROJECT-scoped memories require project_id"):
-        Memory(type=MemoryType.PROJECT_FACT, scope=MemoryScope.PROJECT, content="Project fact")
+        Memory(
+            type=MemoryType.PROJECT_FACT,
+            scope=MemoryScope.PROJECT,
+            content="Project fact",
+        )
 
 
 def test_non_project_scope_rejects_project_id() -> None:
-    with pytest.raises(ValueError, match="Only PROJECT-scoped memories may have project_id"):
+    with pytest.raises(
+        ValueError, match="Only PROJECT-scoped memories may have project_id"
+    ):
         Memory(
             type=MemoryType.USER_FACT,
             scope=MemoryScope.USER,

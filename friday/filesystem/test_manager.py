@@ -34,7 +34,11 @@ def env(tmp_path: Path) -> SimpleNamespace:
     policy = PathPolicy(workspace_root=workspace, registry=registry)
     manager = FileSystemManager(policy)
     return SimpleNamespace(
-        workspace=workspace, external=external, registry=registry, policy=policy, manager=manager
+        workspace=workspace,
+        external=external,
+        registry=registry,
+        policy=policy,
+        manager=manager,
     )
 
 
@@ -144,7 +148,9 @@ def test_create_directory_on_file_raises(env: SimpleNamespace) -> None:
         env.manager.create_directory(target)
 
 
-def test_create_directory_denied_outside_root(env: SimpleNamespace, tmp_path: Path) -> None:
+def test_create_directory_denied_outside_root(
+    env: SimpleNamespace, tmp_path: Path
+) -> None:
     with pytest.raises(PathDeniedError):
         env.manager.create_directory(tmp_path / "newdir")
 
@@ -224,7 +230,9 @@ def test_search_result_limit(env: SimpleNamespace) -> None:
         limited.search_files(env.workspace, r"\.py$")
 
 
-def test_search_does_not_follow_symlink_escape(env: SimpleNamespace, tmp_path: Path) -> None:
+def test_search_does_not_follow_symlink_escape(
+    env: SimpleNamespace, tmp_path: Path
+) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.py").write_text("x")

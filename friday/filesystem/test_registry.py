@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from friday.filesystem.exceptions import GrantNotFoundError, RegistryCorruptError, RootNotFoundError
+from friday.filesystem.exceptions import (
+    GrantNotFoundError,
+    RegistryCorruptError,
+    RootNotFoundError,
+)
 from friday.filesystem.models import READ_PERMISSION, WRITE_PERMISSION
 from friday.filesystem.registry import ProjectRegistry
 
@@ -43,7 +47,9 @@ def test_register_explicit_permissions(storage: Path, project_root: Path) -> Non
     assert project.permissions == frozenset({READ_PERMISSION})
 
 
-def test_register_unknown_permission_rejected(storage: Path, project_root: Path) -> None:
+def test_register_unknown_permission_rejected(
+    storage: Path, project_root: Path
+) -> None:
     registry = ProjectRegistry(storage)
     with pytest.raises(ValueError):
         registry.register(project_root, permissions=("delete",))
@@ -121,13 +127,17 @@ def test_project_containing(storage: Path, project_root: Path) -> None:
     assert registry.project_containing(Path("/unrelated/path")) is None
 
 
-def test_project_containing_prefers_longest_match(storage: Path, project_root: Path) -> None:
+def test_project_containing_prefers_longest_match(
+    storage: Path, project_root: Path
+) -> None:
     registry = ProjectRegistry(storage)
     outer = registry.register(project_root)
     (project_root / "sub").mkdir()
     inner = registry.register(project_root / "sub")
 
-    assert registry.project_containing(project_root / "sub" / "deep" / "file.txt") is inner
+    assert (
+        registry.project_containing(project_root / "sub" / "deep" / "file.txt") is inner
+    )
     assert registry.project_containing(project_root / "other") is outer
     assert registry.project_containing(project_root / "sub") is inner
 

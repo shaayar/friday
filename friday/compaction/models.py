@@ -118,7 +118,9 @@ class ConversationCompaction:
         created_at = _require_aware_timestamp("created_at", self.created_at)
         object.__setattr__(self, "created_at", created_at)
 
-        if isinstance(self.compaction_version, bool) or not isinstance(self.compaction_version, int):
+        if isinstance(self.compaction_version, bool) or not isinstance(
+            self.compaction_version, int
+        ):
             raise TypeError("compaction_version must be an integer")
         if self.compaction_version <= 0:
             raise ValueError("compaction_version must be a positive integer")

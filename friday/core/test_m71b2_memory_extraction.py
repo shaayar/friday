@@ -9,7 +9,6 @@ import asyncio
 from datetime import UTC, datetime
 
 import pytest
-
 from friday.core.session import AssistantSession
 from friday.memory.models import (
     Memory,
@@ -36,7 +35,7 @@ def assistant_session(temp_friday_home):
     """Create an AssistantSession with a fresh temporary database for each test."""
 
     from friday.core.session import AssistantSession
-    
+
     llm_backend = FakeLLMBackend(response="[]")
     session = AssistantSession(
         friday_home=temp_friday_home,
@@ -44,11 +43,12 @@ def assistant_session(temp_friday_home):
     )
     session._extraction_interval = 1
     session._project_service.active_project = lambda: None
-    
+
     yield session
-    
+
     # Cleanup
     import asyncio
+
     asyncio.run(session.stop())
 
 
@@ -86,7 +86,9 @@ def make_memory(
         scope=scope,
         content=content,
         confidence=confidence,
-        provenance=MemoryProvenance(source_conversation_id="conv-1", source_message_ids=("m1",)),
+        provenance=MemoryProvenance(
+            source_conversation_id="conv-1", source_message_ids=("m1",)
+        ),
         created_at=now,
         updated_at=now,
         valid_from=now,
@@ -115,6 +117,7 @@ class TestMemoryExtractionTrigger:
 
         # Mock the conversation store
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -172,6 +175,7 @@ class TestMemoryExtractionLifecycle:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -203,6 +207,7 @@ class TestMemoryExtractionIdentity:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -229,6 +234,7 @@ class TestMemoryExtractionIdentity:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -257,6 +263,7 @@ class TestMemoryExtractionIdentity:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -293,16 +300,37 @@ class TestMemoryExtractionMessages:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._project_service.active_project = MagicMock(return_value=None)
 
         # Create mock messages with proper IDs
-        msg1 = Message(id=1, conversation_id=1, role="user", content="Hello", created_at="2026-01-01T00:00:00")
-        msg2 = Message(id=2, conversation_id=1, role="assistant", content="Hi there!", created_at="2026-01-01T00:00:01")
-        msg3 = Message(id=3, conversation_id=1, role="user", content="How are you?", created_at="2026-01-01T00:00:02")
+        msg1 = Message(
+            id=1,
+            conversation_id=1,
+            role="user",
+            content="Hello",
+            created_at="2026-01-01T00:00:00",
+        )
+        msg2 = Message(
+            id=2,
+            conversation_id=1,
+            role="assistant",
+            content="Hi there!",
+            created_at="2026-01-01T00:00:01",
+        )
+        msg3 = Message(
+            id=3,
+            conversation_id=1,
+            role="user",
+            content="How are you?",
+            created_at="2026-01-01T00:00:02",
+        )
 
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[msg1, msg2, msg3])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[msg1, msg2, msg3]
+        )
         session._memory_extractor._window_size = 10
         session._memory_manager.get_active = MagicMock(return_value=[])
 
@@ -312,7 +340,9 @@ class TestMemoryExtractionMessages:
 
         def capture_extract(messages, *, conversation_id, project_id):
             captured_messages.extend(messages)
-            return original_extract(messages, conversation_id=conversation_id, project_id=project_id)
+            return original_extract(
+                messages, conversation_id=conversation_id, project_id=project_id
+            )
 
         session._memory_extractor.extract = capture_extract
 
@@ -350,11 +380,20 @@ class TestMemoryExtractionPipeline:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="I prefer dark mode", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="I prefer dark mode",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._project_service.active_project = lambda: None
 
@@ -381,11 +420,20 @@ class TestMemoryExtractionPipeline:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="I prefer dark mode", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="I prefer dark mode",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._project_service.active_project = lambda: None
 
@@ -415,13 +463,34 @@ class TestMemoryExtractionPipeline:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="I prefer dark mode", created_at="2026-01-01T00:00:00"),
-            Message(id=2, conversation_id=1, role="assistant", content="Noted", created_at="2026-01-01T00:00:01"),
-            Message(id=3, conversation_id=1, role="user", content="Really, I do", created_at="2026-01-01T00:00:02"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="I prefer dark mode",
+                    created_at="2026-01-01T00:00:00",
+                ),
+                Message(
+                    id=2,
+                    conversation_id=1,
+                    role="assistant",
+                    content="Noted",
+                    created_at="2026-01-01T00:00:01",
+                ),
+                Message(
+                    id=3,
+                    conversation_id=1,
+                    role="user",
+                    content="Really, I do",
+                    created_at="2026-01-01T00:00:02",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._project_service.active_project = lambda: None
 
@@ -460,11 +529,20 @@ class TestMemoryExtractionProjectScoping:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="I use Vim", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="I use Vim",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._project_service.active_project = lambda: None
 
@@ -494,11 +572,20 @@ class TestMemoryExtractionProjectScoping:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="This project uses Python", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="This project uses Python",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
 
         mock_active = MagicMock()
@@ -525,7 +612,9 @@ class TestMemoryExtractionIdempotency:
     """Test that repeated extraction doesn't create duplicate memories."""
 
     @pytest.mark.asyncio
-    async def test_duplicate_extraction_does_not_duplicate_memory(self, temp_friday_home) -> None:
+    async def test_duplicate_extraction_does_not_duplicate_memory(
+        self, temp_friday_home
+    ) -> None:
         """Same information extracted twice → no duplicate active memory."""
         from friday.memory.sqlite_store import Message
 
@@ -539,11 +628,20 @@ class TestMemoryExtractionIdempotency:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="I use Vim", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="I use Vim",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._project_service.active_project = lambda: None
 
@@ -582,11 +680,20 @@ class TestMemoryExtractionIdempotency:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="I prefer dark mode", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="I prefer dark mode",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._project_service.active_project = lambda: None
 
@@ -626,16 +733,27 @@ class TestMemoryExtractionFailureIsolation:
 
         session = AssistantSession(
             friday_home=None,
-            llm_backend=FakeLLMBackend(response="invalid json [[["),  # Will fail parsing
+            llm_backend=FakeLLMBackend(
+                response="invalid json [[["
+            ),  # Will fail parsing
         )
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="Test", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="Test",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._memory_manager.get_active = MagicMock(return_value=[])
         session._project_service.active_project = MagicMock(return_value=None)
@@ -661,6 +779,7 @@ class TestMemoryExtractionFailureIsolation:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -686,6 +805,7 @@ class TestMemoryExtractionFailureIsolation:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -693,7 +813,9 @@ class TestMemoryExtractionFailureIsolation:
         session._project_service.active_project = MagicMock(return_value=None)
 
         # Make get_active raise
-        session._memory_manager.get_active = MagicMock(side_effect=RuntimeError("DB unavailable"))
+        session._memory_manager.get_active = MagicMock(
+            side_effect=RuntimeError("DB unavailable")
+        )
 
         await session.on_assistant_message_persisted()
         await asyncio.sleep(0.01)
@@ -723,6 +845,7 @@ class TestMemoryExtractionTaskOwnership:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -741,6 +864,7 @@ class TestMemoryExtractionTaskOwnership:
     @pytest.mark.asyncio
     async def test_shutdown_cancels_memory_extraction(self) -> None:
         """Long-running extraction is cancelled on shutdown."""
+
         # Use a slow LLM backend
         class SlowLLMBackend:
             async def complete(self, system: str, user: str) -> str:
@@ -756,11 +880,20 @@ class TestMemoryExtractionTaskOwnership:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="Test", created_at="2026-01-01T00:00:00"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="Test",
+                    created_at="2026-01-01T00:00:00",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._memory_manager.get_active = MagicMock(return_value=[])
         session._project_service.active_project = MagicMock(return_value=None)
@@ -791,6 +924,7 @@ class TestNoSideEffects:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
         session._conversation_store.get_recent_messages = MagicMock(return_value=[])
@@ -802,6 +936,7 @@ class TestNoSideEffects:
 
         # Context assembly should still work
         from livekit.agents.llm import ChatContext, ChatMessage
+
         turn_ctx = ChatContext.empty()
         new_message = ChatMessage(role="user", content=["Test"])
 
@@ -849,13 +984,34 @@ class TestMemoryExtractionIntegration:
         session._extraction_interval = 1
 
         from unittest.mock import MagicMock
+
         session._conversation_id = 1
         session._conversation_store = MagicMock()
-        session._conversation_store.get_recent_messages = MagicMock(return_value=[
-            Message(id=1, conversation_id=1, role="user", content="I like dark mode", created_at="2026-01-01T00:00:00"),
-            Message(id=2, conversation_id=1, role="assistant", content="Noted", created_at="2026-01-01T00:00:01"),
-            Message(id=3, conversation_id=1, role="user", content="Dark mode is my preference", created_at="2026-01-01T00:00:02"),
-        ])
+        session._conversation_store.get_recent_messages = MagicMock(
+            return_value=[
+                Message(
+                    id=1,
+                    conversation_id=1,
+                    role="user",
+                    content="I like dark mode",
+                    created_at="2026-01-01T00:00:00",
+                ),
+                Message(
+                    id=2,
+                    conversation_id=1,
+                    role="assistant",
+                    content="Noted",
+                    created_at="2026-01-01T00:00:01",
+                ),
+                Message(
+                    id=3,
+                    conversation_id=1,
+                    role="user",
+                    content="Dark mode is my preference",
+                    created_at="2026-01-01T00:00:02",
+                ),
+            ]
+        )
         session._memory_extractor._window_size = 10
         session._project_service.active_project = lambda: None
 

@@ -1,15 +1,13 @@
-"""
-Orchestration package exports.
-"""
+from __future__ import annotations
 
 from friday.orchestration.models import (
     TaskCapability,
-    VerificationResult,
     TaskContract,
+    VerificationResult,
 )
 
 __all__ = [
     "TaskCapability",
-    "VerificationResult",
     "TaskContract",
+    "VerificationResult",
 ]

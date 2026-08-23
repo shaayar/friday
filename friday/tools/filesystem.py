@@ -34,11 +34,21 @@ def register(mcp):
             result = manager.read_file(path)
         except FilesystemError as exc:
             return _err(exc)
-        return _ok({"path": str(result.path), "content": result.content, "bytes_read": result.bytes_read})
+        return _ok(
+            {
+                "path": str(result.path),
+                "content": result.content,
+                "bytes_read": result.bytes_read,
+            }
+        )
 
     @mcp.tool()
     def write_file(path: str, content: str, overwrite: bool = False) -> dict:
-        """Write a text file inside an authorized root. Refuses to overwrite an existing file unless overwrite=True; the parent directory must already exist."""
+        """Write a text file inside an authorized root.
+
+        Refuses to overwrite an existing file unless overwrite=True; the
+        parent directory must already exist.
+        """
         manager = _build_manager()
         try:
             result = manager.write_file(path, content, overwrite=overwrite)
@@ -77,11 +87,22 @@ def register(mcp):
         )
 
     @mcp.tool()
-    def search_files(path: str, pattern: str, max_depth: int | None = None, max_results: int | None = None) -> dict:
-        """Search file names by regex within an authorized root. Depth and result limits are enforced; optional max_depth/max_results narrow the search."""
+    def search_files(
+        path: str,
+        pattern: str,
+        max_depth: int | None = None,
+        max_results: int | None = None,
+    ) -> dict:
+        """Search file names by regex within an authorized root.
+
+        Depth and result limits are enforced; optional max_depth/max_results
+        narrow the search.
+        """
         manager = _build_manager()
         try:
-            result = manager.search_files(path, pattern, max_depth=max_depth, max_results=max_results)
+            result = manager.search_files(
+                path, pattern, max_depth=max_depth, max_results=max_results
+            )
         except FilesystemError as exc:
             return _err(exc)
         return _ok(

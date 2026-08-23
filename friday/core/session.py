@@ -19,7 +19,6 @@ LiveKit integration contract (verified against livekit-agents 1.6.9):
 
 """
 
-
 from __future__ import annotations
 
 import asyncio
@@ -46,10 +45,9 @@ from friday.memory.sqlite_store import Conversation, SQLiteConversationStore
 from friday.projects.service import ProjectService, build_project_service
 
 if TYPE_CHECKING:
-    from livekit.agents.llm import ChatContext, ChatMessage
-
     from friday.ai.backend import LLMBackend
     from friday.context.models import ContextSnapshot
+    from livekit.agents.llm import ChatContext, ChatMessage
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +158,7 @@ class AssistantSession:
         self._turn_count = 0
 
         # Background task coordination (M7.1b.1)
-        self._background_tasks: set[asyncio.Task] = set()
+        self._background_tasks: set[asyncio.Task[object]] = set()
         self._stopping = False
 
     @property
@@ -190,7 +188,7 @@ class AssistantSession:
 
     # --- Background task coordination (M7.1b.1) ---
 
-    def _schedule_background(self, coro) -> asyncio.Task | None:
+    def _schedule_background(self, coro) -> asyncio.Task[object] | None:
         """Schedule a background coroutine and track its lifecycle.
 
         Returns the created Task, or None if the session is stopping. A
@@ -204,7 +202,7 @@ class AssistantSession:
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
 
-        def _task_done(t: asyncio.Task) -> None:
+        def _task_done(t: asyncio.Task[object]) -> None:
             self._background_tasks.discard(t)
             if t.cancelled():
                 logger.debug("Background task cancelled: %s", t.get_name())
@@ -301,7 +299,7 @@ class AssistantSession:
             system_instructions=self._load_system_prompt(),
             current_user_message=current_user_text,
             recent_messages=recent_messages,
-            conversation_id=self._conversation_id,
+            _conversation_id=self._conversation_id,
             active_project_id=self.active_project_id,
         )
 
@@ -352,11 +350,9 @@ class AssistantSession:
 
         kept_ids = {message_id for message_id, _role, _content in snapshot.recent_messages}
 
-        ordered: list = []
+        ordered: list[object] = []
         if snapshot.system_instructions:
-            ordered.append(
-                ChatMessage(role="system", content=[snapshot.system_instructions])
-            )
+            ordered.append(ChatMessage(role="system", content=[snapshot.system_instructions]))
 
         for item in turn_ctx.items:
             if item.type in ("function_call", "function_call_output"):
@@ -369,7 +365,9 @@ class AssistantSession:
             ordered.append(ChatMessage(role="developer", content=[snapshot.project_context]))
         if snapshot.durable_memories:
             mem_text = "\n".join(f"- {m.content}" for m in snapshot.durable_memories)
-            ordered.append(ChatMessage(role="developer", content=[f"Relevant memories:\n{mem_text}"]))
+            ordered.append(
+                ChatMessage(role="developer", content=[f"Relevant memories:\n{mem_text}"])
+            )
         if snapshot.compressed_history:
             ordered.append(
                 ChatMessage(
@@ -381,12 +379,12 @@ class AssistantSession:
         return ChatContext(items=ordered)
 
     def _load_system_prompt(self) -> str:
-        """Load system prompt from persona.md."""
-        from friday.ai.prompts import load_system_prompt
-        return load_system_prompt()
+        """Load full system prompt with all sections."""
+        from friday.ai.prompts import load_full_system_prompt
 
+        return load_full_system_prompt()
 
-# --- Post-turn memory extraction (M7.1b.2) ---
+    # --- Post-turn memory extraction (M7.1b.2) ---
 
     def on_assistant_persisted(self) -> None:
         """Sync dispatcher called from the agent's non-async event handler.
@@ -440,10 +438,7 @@ class AssistantSession:
                 return
 
             # Convert to extractor format: (message_id, role, content)
-            extraction_messages = [
-                (str(msg.id), msg.role, msg.content)
-                for msg in messages
-            ]
+            extraction_messages = [(str(msg.id), msg.role, msg.content) for msg in messages]
 
             # 2. Run extraction
             project_id = self.active_project_id
@@ -463,12 +458,8 @@ class AssistantSession:
                 return
 
             # 3. Resolve candidates against existing memories
-            existing = self._memory_manager.get_active(
-                valid_at=None, limit=1000
-            )
-            resolutions = self._memory_resolver.resolve(
-                candidates, existing_memories=existing
-            )
+            existing = self._memory_manager.get_active(valid_at=None, limit=1000)
+            resolutions = self._memory_resolver.resolve(candidates, existing_memories=existing)
 
             # 4. Apply resolutions in batch
             applied = self._memory_manager.apply_batch(resolutions)
@@ -484,7 +475,7 @@ class AssistantSession:
             logger.warning("Memory extraction failed: %s", exc)
             # Exception is logged; task callback will handle it
 
-# --- Post-turn compaction evaluation (M7.1b.3) ---
+    # --- Post-turn compaction evaluation (M7.1b.3) ---
 
     async def on_assistant_message_persisted_for_compaction(self) -> None:
         """Call this after an assistant message is persisted to evaluate compaction."""
@@ -512,7 +503,8 @@ class AssistantSession:
         try:
             # Get all messages from conversation store for compaction evaluation
             messages = self._conversation_store.get_recent_messages(
-                self._conversation_id, limit=1000  # Large enough to get full history
+                self._conversation_id,
+                limit=1000,  # Large enough to get full history
             )
 
             if not messages:
@@ -526,7 +518,9 @@ class AssistantSession:
             )
 
             # Run compaction (compactor decides whether threshold is met)
-            result = await compactor.compact(messages, conversation_id=self._conversation_id, force=False)
+            result = await compactor.compact(
+                messages, conversation_id=self._conversation_id, force=False
+            )
 
             if result.compacted and result.compaction is not None:
                 logger.info(
@@ -537,7 +531,10 @@ class AssistantSession:
                 # Schedule promotion as a separate background task after successful compaction
                 self._schedule_background(self._run_promotion(result.compaction))
             else:
-                logger.debug("Compaction check: no compaction needed (remaining_messages=%d)", result.remaining_messages)
+                logger.debug(
+                    "Compaction check: no compaction needed (remaining_messages=%d)",
+                    result.remaining_messages,
+                )
 
         except Exception as exc:  # noqa: BLE001 - isolation boundary
             logger.warning("Compaction check failed: %s", exc)
@@ -577,6 +574,7 @@ class AssistantSession:
 
 
 # --- Convenience function for agent_friday.py ---
+
 
 async def create_assistant_session(
     *,

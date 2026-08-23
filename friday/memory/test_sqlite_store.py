@@ -39,7 +39,9 @@ class TestSQLiteConversationStore:
         assert conversation.created_at == conversation.updated_at
         assert "T" in conversation.created_at  # ISO format
 
-    def test_create_multiple_conversations(self, store: SQLiteConversationStore) -> None:
+    def test_create_multiple_conversations(
+        self, store: SQLiteConversationStore
+    ) -> None:
         """Test creating multiple conversations gets unique IDs."""
         conv1 = store.create_conversation()
         conv2 = store.create_conversation()
@@ -92,7 +94,9 @@ class TestSQLiteConversationStore:
 
         # Save 5 messages
         for i in range(5):
-            store.save_message(conversation.id, "user" if i % 2 == 0 else "assistant", f"Message {i}")
+            store.save_message(
+                conversation.id, "user" if i % 2 == 0 else "assistant", f"Message {i}"
+            )
 
         messages = store.get_recent_messages(conversation.id, limit=3)
 
@@ -102,7 +106,9 @@ class TestSQLiteConversationStore:
         assert messages[1].content == "Message 3"
         assert messages[2].content == "Message 4"
 
-    def test_get_recent_messages_default_limit(self, store: SQLiteConversationStore) -> None:
+    def test_get_recent_messages_default_limit(
+        self, store: SQLiteConversationStore
+    ) -> None:
         """Test default limit of 20 messages."""
         conversation = store.create_conversation()
 
@@ -118,25 +124,32 @@ class TestSQLiteConversationStore:
         assert messages[0].content == "Message 5"
         assert messages[-1].content == "Message 24"
 
-    def test_get_recent_messages_empty_conversation(self, store: SQLiteConversationStore) -> None:
+    def test_get_recent_messages_empty_conversation(
+        self, store: SQLiteConversationStore
+    ) -> None:
         """Test retrieving messages from empty conversation."""
         conversation = store.create_conversation()
         messages = store.get_recent_messages(conversation.id)
 
         assert messages == []
 
-    def test_get_recent_messages_nonexistent_conversation(self, store: SQLiteConversationStore) -> None:
+    def test_get_recent_messages_nonexistent_conversation(
+        self, store: SQLiteConversationStore
+    ) -> None:
         """Test retrieving messages from non-existent conversation."""
         messages = store.get_recent_messages(99999)
         assert messages == []
 
-    def test_message_updates_conversation_timestamp(self, store: SQLiteConversationStore) -> None:
+    def test_message_updates_conversation_timestamp(
+        self, store: SQLiteConversationStore
+    ) -> None:
         """Test that saving a message updates the conversation's updated_at."""
         conversation = store.create_conversation()
         original_updated_at = conversation.updated_at
 
         # Small delay to ensure timestamp difference
         import time
+
         time.sleep(0.01)
 
         store.save_message(conversation.id, "user", "Test message")
@@ -144,7 +157,9 @@ class TestSQLiteConversationStore:
 
         assert updated_conversation is not None
         assert updated_conversation.updated_at > original_updated_at
-        assert updated_conversation.created_at == original_updated_at  # created_at unchanged
+        assert (
+            updated_conversation.created_at == original_updated_at
+        )  # created_at unchanged
 
     def test_foreign_key_cascade_delete(self, store: SQLiteConversationStore) -> None:
         """Test that deleting a conversation cascades to messages."""
@@ -158,7 +173,9 @@ class TestSQLiteConversationStore:
 
         # Delete conversation directly via SQL
         with store._conn:
-            store._conn.execute("DELETE FROM conversations WHERE id = ?", (conversation.id,))
+            store._conn.execute(
+                "DELETE FROM conversations WHERE id = ?", (conversation.id,)
+            )
 
         # Messages should be gone due to CASCADE
         messages = store.get_recent_messages(conversation.id)
@@ -208,6 +225,7 @@ class TestSQLiteConversationStore:
         """Test that default database path works."""
         # Use a custom path to avoid polluting user's home
         import os
+
         original_home = os.environ.get("HOME")
         with tempfile.TemporaryDirectory() as tmpdir:
             os.environ["HOME"] = tmpdir

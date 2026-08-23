@@ -136,9 +136,17 @@ def test_valid_compaction_with_all_categories() -> None:
             make_item(item_id="f1", content="Fact one.", source_message_ids=(10,)),
             make_item(item_id="f2", content="Fact two.", source_message_ids=(12,)),
         ),
-        decisions=(make_item(item_id="d1", content="Use SQLite.", source_message_ids=(14,)),),
-        changes=(make_item(item_id="c1", content="Added compactions.db.", source_message_ids=(16,)),),
-        open_questions=(make_item(item_id="q1", content="Async? Open.", source_message_ids=(18,)),),
+        decisions=(
+            make_item(item_id="d1", content="Use SQLite.", source_message_ids=(14,)),
+        ),
+        changes=(
+            make_item(
+                item_id="c1", content="Added compactions.db.", source_message_ids=(16,)
+            ),
+        ),
+        open_questions=(
+            make_item(item_id="q1", content="Async? Open.", source_message_ids=(18,)),
+        ),
     )
     assert len(compaction.facts) == 2
     assert len(compaction.decisions) == 1

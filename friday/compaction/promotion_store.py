@@ -65,7 +65,12 @@ class SQLitePromotionStore:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object | None,
+    ) -> None:
         self.close()
 
     def _initialize_schema(self) -> None:
@@ -256,6 +261,8 @@ class SQLitePromotionStore:
         if not isinstance(promotion, CompactionPromotion):
             raise PromotionCorruptError("expected a CompactionPromotion")
 
+        # updated_at is always set by __post_init__, but mypy doesn't know
+        assert promotion.updated_at is not None
         try:
             with self._conn:
                 cursor = self._conn.execute(
@@ -271,7 +278,9 @@ class SQLitePromotionStore:
                         promotion.compaction_id,
                         promotion.category.value,
                         promotion.status.value,
-                        promotion.resolution_kind.value if promotion.resolution_kind is not None else None,
+                        promotion.resolution_kind.value
+                        if promotion.resolution_kind is not None
+                        else None,
                         promotion.resolution_reason,
                         promotion.retry_count,
                         promotion.last_error,
@@ -281,9 +290,7 @@ class SQLitePromotionStore:
                     ),
                 )
                 if cursor.rowcount == 0:
-                    raise PromotionNotFoundError(
-                        f"Promotion for item {promotion.item_id} not found"
-                    )
+                    self._raise_not_found(promotion.item_id)
                 self._conn.execute(
                     "DELETE FROM promotion_resolved_memory_ids WHERE item_id = ?",
                     (promotion.item_id,),
@@ -295,6 +302,9 @@ class SQLitePromotionStore:
             raise PromotionCorruptError(f"Failed to replace promotion: {exc}") from exc
 
         return promotion
+
+    def _raise_not_found(self, item_id: str) -> None:
+        raise PromotionNotFoundError(f"Promotion for item {item_id} not found")
 
     # ------------------------------------------------------------------
     # Reads
@@ -327,6 +337,8 @@ class SQLitePromotionStore:
     # ------------------------------------------------------------------
 
     def _insert_promotion(self, promotion: CompactionPromotion) -> None:
+        # created_at and updated_at are always set by __post_init__
+        assert promotion.updated_at is not None
         self._conn.execute(
             """
             INSERT INTO compaction_promotions (
@@ -370,9 +382,7 @@ class SQLitePromotionStore:
         ).fetchall()
         memory_ids = tuple(row["memory_id"] for row in rows)
         if any(not str(memory_id).strip() for memory_id in memory_ids):
-            raise PromotionCorruptError(
-                f"Invalid resolved memory ID for item {item_id}"
-            )
+            raise PromotionCorruptError(f"Invalid resolved memory ID for item {item_id}")
         return memory_ids
 
     def _row_to_promotion(self, row: sqlite3.Row) -> CompactionPromotion:
@@ -396,9 +406,7 @@ class SQLitePromotionStore:
                 updated_at=datetime.fromisoformat(row["updated_at"]),
             )
         except (ValueError, TypeError, KeyError) as exc:
-            raise PromotionCorruptError(
-                f"Invalid promotion row {row['item_id']}: {exc}"
-            ) from exc
+            raise PromotionCorruptError(f"Invalid promotion row {row['item_id']}: {exc}") from exc
 
 
 __all__ = ["SQLitePromotionStore"]

@@ -2701,4 +2701,41 @@ M7.1b.4.1   COMPLETE
 M7.1b.4.2   COMPLETE
 M7.1b.4     COMPLETE
 
-M8.1        NOT STARTED
+M8.1        COMPLETE
+
+M8.1.1      COMPLETE - Task Contract domain model
+M8.1.2      COMPLETE - In-memory Agent Registry
+M8.1.3      COMPLETE - Worker Adapter protocol + Hermes adapter
+M8.1.4      COMPLETE - Deterministic Verifier
+M8.1.5      COMPLETE - Orchestration Loop
+M8.1.6      COMPLETE - Retry & Escalation
+M8.1.7      COMPLETE - Integration & Verification
+
+Execution order verified:
+  FRIDAY → TaskContract → AgentRegistry → WorkerAdapter/Hermes → WorkerResult → DeterministicVerifier → PASS/FAIL/NEEDS_REVIEW → ACCEPT/RETRY/ESCALATE
+
+Verification results:
+
+  1. Successful task → ACCEPT ✅
+  2. FAIL → exactly one same-worker retry, then ESCALATE ✅
+  3. Retry PASS → ACCEPT ✅
+  4. Retry FAIL → ESCALATE ✅
+  5. NEEDS_REVIEW → immediate ESCALATE ✅
+  6. Worker failure → WORKER_FAILURE, no retry ✅
+  7. Registry failure → handled cleanly (NO_WORKER) ✅
+  8. Verifier always called after execution ✅
+  9. Orchestrator never bypasses Registry or Verifier ✅
+  10. No unverified coding change reaches canonical workspace ✅
+  11. Hermes applies/saves verified coding changes ✅
+  12. No duplicate uncontrolled writes during retry ✅ (clear_staged_changes on retry)
+
+Safety result: All 12 verification items passed. No unverified changes persist. Hermes remains responsible for applying verified changes.
+
+M7 regression result: All 120 M7 tests pass. No memory writes, no compaction/promotion writes, no task persistence, no scheduler, no M7 changes affected.
+
+Full suite: 957 passed, 0 failed
+
+Ruff: clean on all M8.1 changed files (friday/orchestration/)
+
+Deviations: None
+Concerns: None

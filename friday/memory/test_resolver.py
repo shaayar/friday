@@ -70,7 +70,9 @@ def make_memory(
     )
 
 
-def create_resolution(candidate: MemoryCandidate, existing: Memory | None = None) -> Resolution:
+def create_resolution(
+    candidate: MemoryCandidate, existing: Memory | None = None
+) -> Resolution:
     """Helper: classify a single candidate against a single existing memory."""
     resolver = MemoryResolver()
     existing_memories = [existing] if existing is not None else []
@@ -228,7 +230,9 @@ class TestConfidenceDemotion:
         assert resolution.candidate.confidence is MemoryConfidence.EXPLICIT
 
     def test_demoted_candidate_maps_to_tentative_memory(self) -> None:
-        candidate = make_candidate("User maybe likes Rust.", confidence=MemoryConfidence.EXPLICIT)
+        candidate = make_candidate(
+            "User maybe likes Rust.", confidence=MemoryConfidence.EXPLICIT
+        )
         resolution = create_resolution(candidate)
         memory = candidate_to_memory(resolution.candidate)
         assert memory.confidence is MemoryConfidence.TENTATIVE

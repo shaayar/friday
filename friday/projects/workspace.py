@@ -18,10 +18,15 @@ raw filesystem access.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 
-from friday.filesystem.exceptions import AlreadyExistsError, FilesystemError, PathNotFoundError
+from friday.filesystem.exceptions import (
+    AlreadyExistsError,
+    FilesystemError,
+    PathNotFoundError,
+)
 from friday.filesystem.manager import FileSystemManager
 
 _CONTEXT = "context.md"
@@ -55,10 +60,8 @@ class ProjectWorkspace:
         the only operation that creates workspace state on disk.
         """
         project_path = self.project_path(project_id)
-        try:
+        with contextlib.suppress(AlreadyExistsError):
             self._fs.create_directory(project_path, parents=True)
-        except AlreadyExistsError:
-            pass  # workspace directory already exists
         for filename, default in _seed_content():
             self._write_if_missing(project_path / filename, default)
         return project_path

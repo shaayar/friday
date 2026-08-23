@@ -48,7 +48,12 @@ class SQLiteConversationStore:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object | None,
+    ) -> None:
         self.close()
 
     def create_conversation(self) -> Conversation:
@@ -61,7 +66,9 @@ class SQLiteConversationStore:
                 """,
                 (now, now),
             )
-        conversation_id = int(cursor.lastrowid)
+        conversation_id = cursor.lastrowid
+        if conversation_id is None:
+            raise RuntimeError("Failed to create conversation: no lastrowid")
         return Conversation(id=conversation_id, created_at=now, updated_at=now)
 
     def save_message(self, conversation_id: int, role: str, content: str) -> Message:
@@ -82,7 +89,9 @@ class SQLiteConversationStore:
                 """,
                 (conversation_id, role, content, now),
             )
-        message_id = int(cursor.lastrowid)
+        message_id = cursor.lastrowid
+        if message_id is None:
+            raise RuntimeError("Failed to save message: no lastrowid")
         return Message(
             id=message_id,
             conversation_id=conversation_id,

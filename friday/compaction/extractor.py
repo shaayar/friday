@@ -63,6 +63,8 @@ _SYSTEM_PROMPT = (
 
 
 class _Message(Protocol):
+    """A conversation message as seen by the extractor."""
+
     id: int
     role: str
     content: str
@@ -117,7 +119,9 @@ class ConversationCompactionExtractor:
 
     @staticmethod
     def _build_transcript(messages: Sequence[_Message]) -> str:
-        return "\n".join(f"[{message.id}] {message.role}: {message.content}" for message in messages)
+        return "\n".join(
+            f"[{message.id}] {message.role}: {message.content}" for message in messages
+        )
 
     # ------------------------------------------------------------------
     # Tolerant parsing
@@ -253,7 +257,9 @@ class ConversationCompactionExtractor:
             source_ids,
             content,
         )
-        return CompactionItem(item_id=item_id, content=content.strip(), source_message_ids=source_ids)
+        return CompactionItem(
+            item_id=item_id, content=content.strip(), source_message_ids=source_ids
+        )
 
     @staticmethod
     def _resolve_source_ids(raw: object, known_ids: set[int]) -> tuple[int, ...]:

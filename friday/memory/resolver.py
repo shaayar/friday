@@ -63,8 +63,8 @@ class MemoryResolver:
         resolutions: list[Resolution] = []
         accepted_contents: list[tuple[str, MemoryScope]] = []
 
-        for candidate in candidates:
-            candidate = self._apply_confidence_corrections(candidate)
+        for raw_candidate in candidates:
+            candidate = self._apply_confidence_corrections(raw_candidate)
 
             duplicate = self._find_duplicate(candidate, existing_memories)
             if duplicate is not None:
@@ -103,9 +103,8 @@ class MemoryResolver:
     # ------------------------------------------------------------------
 
     def _apply_confidence_corrections(self, candidate: MemoryCandidate) -> MemoryCandidate:
-        if (
-            candidate.confidence is MemoryConfidence.EXPLICIT
-            and has_hedged_language(candidate.content)
+        if candidate.confidence is MemoryConfidence.EXPLICIT and has_hedged_language(
+            candidate.content
         ):
             return MemoryCandidate(
                 type=candidate.type,
@@ -225,9 +224,7 @@ class MemoryResolver:
             reason="no related existing memory",
         )
 
-    def _contradiction_decision(
-        self, candidate: MemoryCandidate, relevant: Memory
-    ) -> Resolution:
+    def _contradiction_decision(self, candidate: MemoryCandidate, relevant: Memory) -> Resolution:
         if self._llm is not None:
             decision = self._ask_llm(candidate, relevant)
             if decision is not None:
@@ -259,24 +256,25 @@ class MemoryResolver:
         system = (
             "You decide whether a proposed durable memory should supersede, "
             "coexist with, or be rejected relative to an existing memory. "
-            "Reply with exactly one JSON object: {\"action\": "
-            "\"supersede\"|\"create\"|\"reject\"}."
+            'Reply with exactly one JSON object: {"action": '
+            '"supersede"|"create"|"reject"}.'
         )
         user = (
             f"Existing memory: {relevant.content}\n"
             f"Proposed memory: {candidate.content}\n"
-            "Return {\"action\": ...}"
+            'Return {"action": ...}'
         )
         try:
+            # _llm is not None here (checked before calling _ask_llm)
+            assert self._llm is not None
             raw = self._llm.complete(system, user)
         except Exception:  # noqa: BLE001 - advisory path must never break extraction
             logger.warning("LLM advisory resolution failed; rejecting conservatively")
             return None
         if isinstance(raw, Awaitable):
             # The protocol is async, but this best-effort path is synchronous
-            # and is never given an async backend in production. Close the
-            # coroutine rather than leaking it.
-            raw.close()
+            # and is never given an async backend in production.
+            # We cannot await here; skip advisory step.
             logger.warning("LLM advisory backend is async; skipping advisory step")
             return None
         return self._parse_llm_decision(raw, candidate, relevant)

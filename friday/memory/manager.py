@@ -24,7 +24,6 @@ class ConversationStorage(Protocol):
     def get_recent_messages(self, conversation_id: int, limit: int = 20) -> list[Message]: ...
 
 
-
 class MemoryManager:
     """
     High-level memory operations for conversation history.

@@ -123,7 +123,10 @@ class FakeMemoryManager:
         self.applied.extend(resolutions)
         results: list[Memory | None] = []
         for resolution in resolutions:
-            if resolution.kind is ResolutionKind.REJECT or resolution.kind is ResolutionKind.INVALIDATE:
+            if (
+                resolution.kind is ResolutionKind.REJECT
+                or resolution.kind is ResolutionKind.INVALIDATE
+            ):
                 results.append(None)
             elif resolution.kind in (ResolutionKind.CREATE, ResolutionKind.SUPERSEDE):
                 memory = candidate_to_memory(resolution.candidate)
@@ -158,14 +161,18 @@ class FakeResolver:
             raise RuntimeError(self.fail)
         resolutions: list[Resolution] = []
         for index, candidate in enumerate(candidates):
-            kind = self.kinds[index] if index < len(self.kinds) else ResolutionKind.CREATE
+            kind = (
+                self.kinds[index] if index < len(self.kinds) else ResolutionKind.CREATE
+            )
             if kind is ResolutionKind.REJECT:
                 resolutions.append(
                     Resolution(kind=kind, candidate=candidate, reason="fake_reject")
                 )
             elif kind is ResolutionKind.INVALIDATE:
                 resolutions.append(
-                    Resolution(kind=kind, existing_memory_id="mem-0", reason="fake_invalidate")
+                    Resolution(
+                        kind=kind, existing_memory_id="mem-0", reason="fake_invalidate"
+                    )
                 )
             elif kind is ResolutionKind.SUPERSEDE:
                 resolutions.append(
@@ -188,8 +195,12 @@ class FakeResolver:
 # ----------------------------------------------------------------------
 
 
-def make_item(item_id: str, content: str, source_message_ids: tuple[int, ...]) -> CompactionItem:
-    return CompactionItem(item_id=item_id, content=content, source_message_ids=source_message_ids)
+def make_item(
+    item_id: str, content: str, source_message_ids: tuple[int, ...]
+) -> CompactionItem:
+    return CompactionItem(
+        item_id=item_id, content=content, source_message_ids=source_message_ids
+    )
 
 
 def make_compaction(**overrides) -> ConversationCompaction:
@@ -205,11 +216,11 @@ def make_compaction(**overrides) -> ConversationCompaction:
             make_item("fact-2", "FRIDAY uses Python 3.12.", (2, 3)),
         ),
         "decisions": (
-            make_item("decision-1", "FRIDAY will persist durable memory in SQLite.", (3, 4)),
+            make_item(
+                "decision-1", "FRIDAY will persist durable memory in SQLite.", (3, 4)
+            ),
         ),
-        "changes": (
-            make_item("change-1", "Moved message storage to SQLite.", (4, 5)),
-        ),
+        "changes": (make_item("change-1", "Moved message storage to SQLite.", (4, 5)),),
         "open_questions": (
             make_item("question-1", "Should promotion be automatic?", (6,)),
         ),
@@ -238,7 +249,9 @@ def promoter(ledger, memories, resolver) -> ConversationMemoryPromoter:
     return ConversationMemoryPromoter(ledger, memories, resolver)
 
 
-def seeded_promoted(item_id: str, category: CompactionItemCategory) -> CompactionPromotion:
+def seeded_promoted(
+    item_id: str, category: CompactionItemCategory
+) -> CompactionPromotion:
     return CompactionPromotion(
         item_id=item_id,
         compaction_id="compaction-1",
@@ -250,7 +263,9 @@ def seeded_promoted(item_id: str, category: CompactionItemCategory) -> Compactio
     )
 
 
-def seeded_rejected(item_id: str, category: CompactionItemCategory) -> CompactionPromotion:
+def seeded_rejected(
+    item_id: str, category: CompactionItemCategory
+) -> CompactionPromotion:
     return CompactionPromotion(
         item_id=item_id,
         compaction_id="compaction-1",
@@ -297,9 +312,7 @@ def test_decision_without_project_id_rejected(promoter, resolver) -> None:
     decision = next(r for r in result.items if r.item_id == "decision-1")
     assert decision.outcome is PromotionOutcome.REJECTED
     assert decision.reason == "decision_requires_project_id"
-    assert all(
-        c.source_message_ids != ("3", "4") for c in resolver.calls[0][0]
-    )
+    assert all(c.source_message_ids != ("3", "4") for c in resolver.calls[0][0])
 
 
 def test_summary_never_promoted(promoter, resolver, memories) -> None:
@@ -416,7 +429,11 @@ def test_candidates_pass_through_resolver(promoter, resolver) -> None:
 
     assert len(resolver.calls) == 1
     candidates = resolver.calls[0][0]
-    assert [c.source_message_ids for c in candidates] == [("1", "2"), ("2", "3"), ("3", "4")]
+    assert [c.source_message_ids for c in candidates] == [
+        ("1", "2"),
+        ("2", "3"),
+        ("3", "4"),
+    ]
 
 
 def test_resolver_create_persists_memory_and_marks_promoted(
@@ -435,7 +452,11 @@ def test_resolver_create_persists_memory_and_marks_promoted(
 
 
 def test_resolver_supersede_marks_promoted(promoter, ledger, resolver) -> None:
-    resolver.kinds = [ResolutionKind.SUPERSEDE, ResolutionKind.CREATE, ResolutionKind.CREATE]
+    resolver.kinds = [
+        ResolutionKind.SUPERSEDE,
+        ResolutionKind.CREATE,
+        ResolutionKind.CREATE,
+    ]
     result = promoter.promote(make_compaction(), project_id="proj-1")
 
     outcome = next(r for r in result.items if r.item_id == "fact-1")
@@ -445,7 +466,11 @@ def test_resolver_supersede_marks_promoted(promoter, ledger, resolver) -> None:
 
 
 def test_resolver_reject_marks_rejected(promoter, ledger, memories, resolver) -> None:
-    resolver.kinds = [ResolutionKind.REJECT, ResolutionKind.CREATE, ResolutionKind.CREATE]
+    resolver.kinds = [
+        ResolutionKind.REJECT,
+        ResolutionKind.CREATE,
+        ResolutionKind.CREATE,
+    ]
     result = promoter.promote(make_compaction(), project_id="proj-1")
 
     outcome = next(r for r in result.items if r.item_id == "fact-1")
@@ -461,7 +486,9 @@ def test_malformed_candidate_rejected(promoter, ledger, memories, monkeypatch) -
     def boom(*_args, **_kwargs) -> MemoryCandidate:
         raise ValueError("boom")
 
-    monkeypatch.setattr(ConversationMemoryPromoter, "_build_candidate", staticmethod(boom))
+    monkeypatch.setattr(
+        ConversationMemoryPromoter, "_build_candidate", staticmethod(boom)
+    )
     result = promoter.promote(make_compaction(), project_id="proj-1")
 
     outcome = next(r for r in result.items if r.item_id == "fact-1")
@@ -558,7 +585,11 @@ def test_deterministic_result_order_and_candidate_order(promoter, resolver) -> N
 def test_mixed_resolution_outcomes_in_one_batch(
     promoter, ledger, memories, resolver
 ) -> None:
-    resolver.kinds = [ResolutionKind.CREATE, ResolutionKind.REJECT, ResolutionKind.CREATE]
+    resolver.kinds = [
+        ResolutionKind.CREATE,
+        ResolutionKind.REJECT,
+        ResolutionKind.CREATE,
+    ]
     result = promoter.promote(make_compaction(), project_id="proj-1")
 
     by_id = {r.item_id: r for r in result.items}
@@ -696,7 +727,9 @@ def test_reconciles_externally_created_memory(promoter, ledger, memories) -> Non
     assert fact.memory_ids == ("mem-ext",)
     assert ledger.entry("fact-1").status is PromotionStatus.PROMOTED
     assert len(memories.memories) == 3
-    matching = [m for m in memories.memories if m.content == "I use Ubuntu on my desktop."]
+    matching = [
+        m for m in memories.memories if m.content == "I use Ubuntu on my desktop."
+    ]
     assert len(matching) == 1
     assert matching[0].id == "mem-ext"
 

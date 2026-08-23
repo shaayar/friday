@@ -24,10 +24,10 @@ intentionally out of scope for this domain layer.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 
 def _utc_now() -> datetime:
@@ -49,7 +49,7 @@ def _normalize_optional_text(name: str, value: str | None) -> str | None:
     return text
 
 
-def _normalize_memory_ids(memory_ids) -> tuple[str, ...]:
+def _normalize_memory_ids(memory_ids: Iterable[str]) -> tuple[str, ...]:
     if isinstance(memory_ids, (str, bytes)) or not hasattr(memory_ids, "__iter__"):
         raise TypeError("resolved_memory_ids must be an iterable of strings")
     normalized: list[str] = []
@@ -61,7 +61,7 @@ def _normalize_memory_ids(memory_ids) -> tuple[str, ...]:
     return tuple(sorted(set(normalized)))
 
 
-class CompactionItemCategory(str, Enum):
+class CompactionItemCategory(StrEnum):
     """The structured compaction category an item belongs to (M1)."""
 
     FACTS = "facts"
@@ -70,7 +70,7 @@ class CompactionItemCategory(str, Enum):
     OPEN_QUESTIONS = "open_questions"
 
 
-class PromotionStatus(str, Enum):
+class PromotionStatus(StrEnum):
     """Lifecycle states of a promotion-ledger entry (ADR-025)."""
 
     PENDING = "pending"
@@ -78,7 +78,7 @@ class PromotionStatus(str, Enum):
     REJECTED = "rejected"
 
 
-class PromotionResolutionKind(str, Enum):
+class PromotionResolutionKind(StrEnum):
     """Kind of resolution produced by the memory resolver (CREATE/SUPERSEDE)."""
 
     CREATE = "create"
@@ -112,16 +112,28 @@ class CompactionPromotion:
     updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
+        self._validate_item_id()
+        self._validate_compaction_id()
+        self._validate_enums()
+        self._validate_retry_count()
+        self._normalize_memory_ids()
+        self._normalize_optional_fields()
+        self._validate_timestamps()
+        self._validate_status_consistency()
+
+    def _validate_item_id(self) -> None:
         item_id = str(self.item_id).strip()
         if not item_id:
             raise ValueError("item_id cannot be empty")
         object.__setattr__(self, "item_id", item_id)
 
+    def _validate_compaction_id(self) -> None:
         compaction_id = str(self.compaction_id).strip()
         if not compaction_id:
             raise ValueError("compaction_id cannot be empty")
         object.__setattr__(self, "compaction_id", compaction_id)
 
+    def _validate_enums(self) -> None:
         if not isinstance(self.category, CompactionItemCategory):
             raise TypeError(f"Invalid category: {self.category!r}")
         if not isinstance(self.status, PromotionStatus):
@@ -131,34 +143,43 @@ class CompactionPromotion:
         ):
             raise TypeError(f"Invalid resolution kind: {self.resolution_kind!r}")
 
+    def _validate_retry_count(self) -> None:
         if isinstance(self.retry_count, bool) or not isinstance(self.retry_count, int):
             raise TypeError("retry_count must be an integer")
         if self.retry_count < 0:
             raise ValueError("retry_count cannot be negative")
 
+    def _normalize_memory_ids(self) -> None:
         memory_ids = _normalize_memory_ids(self.resolved_memory_ids)
         object.__setattr__(self, "resolved_memory_ids", memory_ids)
 
+    def _normalize_optional_fields(self) -> None:
         resolution_reason = _normalize_optional_text("resolution_reason", self.resolution_reason)
         object.__setattr__(self, "resolution_reason", resolution_reason)
 
         last_error = _normalize_optional_text("last_error", self.last_error)
         object.__setattr__(self, "last_error", last_error)
 
+    def _validate_timestamps(self) -> None:
         created_at = _require_aware_timestamp("created_at", self.created_at)
         object.__setattr__(self, "created_at", created_at)
 
-        updated_at = created_at if self.updated_at is None else _require_aware_timestamp("updated_at", self.updated_at)
+        updated_at = (
+            created_at
+            if self.updated_at is None
+            else _require_aware_timestamp("updated_at", self.updated_at)
+        )
         if updated_at < created_at:
             raise ValueError("updated_at cannot be earlier than created_at")
         object.__setattr__(self, "updated_at", updated_at)
 
+    def _validate_status_consistency(self) -> None:
         if self.status is PromotionStatus.PROMOTED:
-            if not memory_ids:
+            if not self.resolved_memory_ids:
                 raise ValueError("a PROMOTED promotion requires resolved memory ID(s)")
-        elif memory_ids:
+        elif self.resolved_memory_ids:
             raise ValueError("a non-PROMOTED promotion cannot claim resolved memory IDs")
-        if self.status is PromotionStatus.REJECTED and not resolution_reason:
+        if self.status is PromotionStatus.REJECTED and not self.resolution_reason:
             raise ValueError("a REJECTED promotion requires a resolution reason")
         if self.resolution_kind is not None and self.status is not PromotionStatus.PROMOTED:
             raise ValueError("resolution_kind is only valid for PROMOTED promotions")
@@ -190,7 +211,7 @@ class CompactionPromotion:
 
     def mark_promoted(
         self,
-        memory_ids: Sequence[str],
+        memory_ids: tuple[str, ...],
         *,
         resolution_kind: PromotionResolutionKind | None = None,
         updated_at: datetime | None = None,
@@ -198,7 +219,8 @@ class CompactionPromotion:
         """Transition PENDING → PROMOTED with the resulting memory ID(s)."""
         if self.status is not PromotionStatus.PENDING:
             raise ValueError(
-                f"cannot promote a {self.status.value!r} promotion; only PENDING may become PROMOTED"
+                f"cannot promote a {self.status.value!r} promotion; "
+                "only PENDING may become PROMOTED"
             )
         return replace(
             self,
@@ -230,7 +252,8 @@ class CompactionPromotion:
         """Transition REJECTED → PENDING; must be explicitly requested."""
         if self.status is not PromotionStatus.REJECTED:
             raise ValueError(
-                f"cannot reconsider a {self.status.value!r} promotion; only REJECTED may be reconsidered"
+                f"cannot reconsider a {self.status.value!r} promotion; "
+                "only REJECTED may be reconsidered"
             )
         return replace(
             self,
@@ -238,14 +261,17 @@ class CompactionPromotion:
             updated_at=updated_at if updated_at is not None else _utc_now(),
         )
 
-    def record_transient_failure(self, error: str, *, updated_at: datetime | None = None) -> CompactionPromotion:
+    def record_transient_failure(
+        self, error: str, *, updated_at: datetime | None = None
+    ) -> CompactionPromotion:
         """Record a transient failure; the item stays PENDING and retry_count increments.
 
         Per ADR-025, transient failures never become a separate FAILED state.
         """
         if self.status is not PromotionStatus.PENDING:
             raise ValueError(
-                f"cannot record a failure on a {self.status.value!r} promotion; only PENDING may be retried"
+                f"cannot record a failure on a {self.status.value!r} promotion; "
+                "only PENDING may be retried"
             )
         return replace(
             self,

@@ -15,7 +15,6 @@ The pointer is persisted atomically to ``<storage_path>``.
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -106,6 +105,5 @@ class ActiveProjectManager:
             else {}
         )
         tmp = self._storage_path.with_name(self._storage_path.name + ".tmp")
-        with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2)
-        os.replace(tmp, self._storage_path)
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp.replace(self._storage_path)

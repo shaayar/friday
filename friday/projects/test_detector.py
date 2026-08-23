@@ -44,7 +44,9 @@ def test_detect_at_root_itself(env: SimpleNamespace, tmp_path: Path) -> None:
     assert result.project is project
 
 
-def test_detect_unknown_directory_returns_none(env: SimpleNamespace, tmp_path: Path) -> None:
+def test_detect_unknown_directory_returns_none(
+    env: SimpleNamespace, tmp_path: Path
+) -> None:
     root = tmp_path / "project"
     root.mkdir()
     env.registry.register(root, name="app")
@@ -79,7 +81,9 @@ def test_detect_never_creates_workspace(env: SimpleNamespace, tmp_path: Path) ->
     assert list(projects_dir.iterdir()) == []
 
 
-def test_detect_prefers_longest_matching_root(env: SimpleNamespace, tmp_path: Path) -> None:
+def test_detect_prefers_longest_matching_root(
+    env: SimpleNamespace, tmp_path: Path
+) -> None:
     outer_root = tmp_path / "outer"
     inner_root = outer_root / "inner"
     inner_root.mkdir(parents=True)

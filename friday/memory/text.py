@@ -145,12 +145,26 @@ _TRANSITION_MARKERS = (
 # These are filtered from significant_terms so that memories sharing only
 # generic verbs (e.g., "I use X" vs "I use Y") are not considered related.
 _GENERIC_VERBS = {
-    "use", "uses", "using", "used",
-    "like", "likes", "liked",
-    "have", "has", "had", "having",
-    "need", "needs", "needed",
-    "want", "wants", "wanted",
-    "prefer", "prefers", "preferred",
+    "use",
+    "uses",
+    "using",
+    "used",
+    "like",
+    "likes",
+    "liked",
+    "have",
+    "has",
+    "had",
+    "having",
+    "need",
+    "needs",
+    "needed",
+    "want",
+    "wants",
+    "wanted",
+    "prefer",
+    "prefers",
+    "preferred",
 }
 
 _NEGATION_MARKERS = (

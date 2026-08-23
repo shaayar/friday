@@ -6,23 +6,23 @@ from pathlib import Path
 
 
 class _Config:
-    STT_PROVIDER       = "sarvam"
-    LLM_PROVIDER       = "groq"
-    TTS_PROVIDER       = "sarvam"
+    STT_PROVIDER = "sarvam"
+    LLM_PROVIDER = "groq"
+    TTS_PROVIDER = "sarvam"
 
     GROQ_LLM_MODEL = "openai/gpt-oss-20b"
-    OPENAI_LLM_MODEL   = "gpt-4o"
+    OPENAI_LLM_MODEL = "gpt-4o"
     OLLAMA_LLM_MODEL = "qwen2.5-coder:3b"
 
-    SARVAM_TTS_MODEL   = "bulbul:v3"
-    SARVAM_TTS_VOICE   = "neha"
-    TTS_SPEED           = 1.15
+    SARVAM_TTS_MODEL = "bulbul:v3"
+    SARVAM_TTS_VOICE = "neha"
+    TTS_SPEED = 1.15
 
     SARVAM_TTS_LANGUAGE = "en-IN"
 
     # MCP server running on Windows host
     MCP_SERVER_PORT = 8000
-    
+
     SERVER_NAME = "Friday MCP Server"
 
     # FRIDAY workspace root — internally trusted by the filesystem policy
@@ -55,5 +55,6 @@ class _Config:
     COMPACTION_MESSAGE_THRESHOLD = 20
     COMPACTION_MAX_WINDOW = 20
     COMPACTION_SIZE_THRESHOLD_UNITS = 4_000  # provisional (Phase 4 OPEN value)
+
 
 config = _Config()

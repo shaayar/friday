@@ -47,7 +47,9 @@ def make_memory(
         scope=scope,
         content=content,
         confidence=confidence,
-        provenance=MemoryProvenance(source_conversation_id="conv-1", source_message_ids=("m1",)),
+        provenance=MemoryProvenance(
+            source_conversation_id="conv-1", source_message_ids=("m1",)
+        ),
         created_at=created_at,
         updated_at=created_at,
         valid_from=created_at,
@@ -69,7 +71,9 @@ class FakeMemoryProvider:
         self.calls = 0
         self.saves: list[Memory] = []
 
-    def get_active(self, *, scope=None, project_id=None, valid_at=None, limit=100, offset=0):
+    def get_active(
+        self, *, scope=None, project_id=None, valid_at=None, limit=100, offset=0
+    ):
         self.calls += 1
         if self.raise_on_get_active:
             raise RuntimeError("memory store unavailable")
@@ -117,7 +121,9 @@ class FakeShrinker:
         return self._summary
 
 
-def default_budget(*, max_input: int = 40_000, reserved: int = 8_000, safety: int = 2_000) -> ContextBudget:
+def default_budget(
+    *, max_input: int = 40_000, reserved: int = 8_000, safety: int = 2_000
+) -> ContextBudget:
     return ContextBudget(
         max_input_units=max_input,
         reserved_output_units=reserved,
@@ -142,13 +148,19 @@ class TestBasicAssembly:
         snapshot = manager.assemble(
             system_instructions="You are FRIDAY.",
             current_user_message="What about vim?",
-            recent_messages=[message("m1", "user", "Hello."), message("m2", "assistant", "Hi!")],
-            conversation_id="conv-1",
+            recent_messages=[
+                message("m1", "user", "Hello."),
+                message("m2", "assistant", "Hi!"),
+            ],
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert snapshot.system_instructions == "You are FRIDAY."
         assert snapshot.current_user_message == "What about vim?"
-        assert snapshot.recent_messages == (("m1", "user", "Hello."), ("m2", "assistant", "Hi!"))
+        assert snapshot.recent_messages == (
+            ("m1", "user", "Hello."),
+            ("m2", "assistant", "Hi!"),
+        )
         assert snapshot.durable_memories == (memories[0],)
         assert snapshot.project_context is None
         assert snapshot.compressed_history is None
@@ -166,7 +178,7 @@ class TestBasicAssembly:
             system_instructions="SYSTEM",
             current_user_message="CURRENT",
             recent_messages=[message("m1", "user", "RECENT")],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
         rendered = snapshot.render()
@@ -181,12 +193,15 @@ class TestBasicAssembly:
 
     def test_recent_turn_capping(self) -> None:
         manager = self.make_manager()
-        messages = [message(f"m{i}", "user" if i % 2 else "assistant", f"msg {i}") for i in range(30)]
+        messages = [
+            message(f"m{i}", "user" if i % 2 else "assistant", f"msg {i}")
+            for i in range(30)
+        ]
         snapshot = manager.assemble(
             system_instructions="S",
             current_user_message="C",
             recent_messages=messages,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         # recent_turns defaults to 10 -> last 20 messages.
@@ -203,7 +218,7 @@ class TestBasicAssembly:
             system_instructions="S",
             current_user_message=None,
             recent_messages=[],
-            conversation_id="conv-9",
+            _conversation_id="conv-9",
             active_project_id=None,
         )
         assert isinstance(snapshot, ContextSnapshot)
@@ -214,8 +229,15 @@ class TestMemoryRetrieval:
     def test_active_and_scope_respected(self) -> None:
         memories = [
             make_memory("User fact", "user-1"),
-            make_memory("Project fact", "proj-1", scope=MemoryScope.PROJECT, project_id="proj-1"),
-            make_memory("Other project fact", "proj-2", scope=MemoryScope.PROJECT, project_id="proj-2"),
+            make_memory(
+                "Project fact", "proj-1", scope=MemoryScope.PROJECT, project_id="proj-1"
+            ),
+            make_memory(
+                "Other project fact",
+                "proj-2",
+                scope=MemoryScope.PROJECT,
+                project_id="proj-2",
+            ),
             make_memory("Stale", "stale-1", status=MemoryStatus.INVALIDATED),
             make_memory("Superseded", "sup-1", status=MemoryStatus.SUPERSEDED),
         ]
@@ -227,7 +249,7 @@ class TestMemoryRetrieval:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
         contents = {m.content for m in snapshot.durable_memories}
@@ -244,16 +266,20 @@ class TestMemoryRetrieval:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert len(snapshot.durable_memories) == 10
 
     def test_lexical_relevance_ordering(self) -> None:
         memories = [
-            make_memory("User uses Neovim.", "neovim", created_at=NOW + timedelta(hours=2)),
+            make_memory(
+                "User uses Neovim.", "neovim", created_at=NOW + timedelta(hours=2)
+            ),
             make_memory("User uses Vim.", "vim", created_at=NOW),
-            make_memory("User likes sushi.", "sushi", created_at=NOW + timedelta(hours=3)),
+            make_memory(
+                "User likes sushi.", "sushi", created_at=NOW + timedelta(hours=3)
+            ),
         ]
         manager = ContextManager(
             memory_manager=FakeMemoryProvider(memories),
@@ -263,7 +289,7 @@ class TestMemoryRetrieval:
             system_instructions="S",
             current_user_message="Which editor works best for vim config?",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         ordered = [m.id for m in snapshot.durable_memories]
@@ -292,7 +318,7 @@ class TestMemoryRetrieval:
             system_instructions="S",
             current_user_message="vim usage",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         ordered = [m.id for m in snapshot.durable_memories]
@@ -311,7 +337,7 @@ class TestMemoryRetrieval:
             system_instructions="S",
             current_user_message="vim",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         ordered = [m.id for m in snapshot.durable_memories]
@@ -326,7 +352,7 @@ class TestMemoryRetrieval:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert snapshot.durable_memories == ()
@@ -339,7 +365,7 @@ class TestMemoryRetrieval:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[message("m1", "user", "hello")],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert snapshot.durable_memories == ()
@@ -369,7 +395,7 @@ class TestProjectContext:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
         assert snapshot.project_context is not None
@@ -386,7 +412,7 @@ class TestProjectContext:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert snapshot.project_context is None
@@ -402,7 +428,7 @@ class TestProjectContext:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
         assert snapshot.project_context is None
@@ -413,7 +439,7 @@ class TestProjectContext:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
         assert snapshot.project_context is None
@@ -426,7 +452,7 @@ class TestProjectContext:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[message("m1", "user", "hello")],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
         assert snapshot.project_context is None
@@ -451,7 +477,7 @@ class TestProjectContext:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id="proj-1",
         )
         # context.md and state.json are always kept; facts/decisions dropped.
@@ -462,7 +488,9 @@ class TestProjectContext:
 
 
 class TestBudgetAndShrinking:
-    def make_manager(self, *, budget, shrinker=None, memories=None, recent_turns=10) -> ContextManager:
+    def make_manager(
+        self, *, budget, shrinker=None, memories=None, recent_turns=10
+    ) -> ContextManager:
         return ContextManager(
             memory_manager=FakeMemoryProvider(memories or []),
             project_context_provider=None,
@@ -478,7 +506,7 @@ class TestBudgetAndShrinking:
             system_instructions="S",
             current_user_message="C",
             recent_messages=[message("m1", "user", "hello")],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert shrinker.calls == 0
@@ -487,16 +515,16 @@ class TestBudgetAndShrinking:
         assert snapshot.estimated_units <= snapshot.budget.available_units
 
     def test_budget_overflow_reduces_lowest_priority(self) -> None:
-        budget = ContextBudget(max_input_units=10, reserved_output_units=0, safety_margin=0)
+        budget = ContextBudget(
+            max_input_units=10, reserved_output_units=0, safety_margin=0
+        )
         manager = self.make_manager(budget=budget, recent_turns=2)
-        messages = [
-            message(f"m{i}", "user", "x" * 30) for i in range(8)
-        ]
+        messages = [message(f"m{i}", "user", "x" * 30) for i in range(8)]
         snapshot = manager.assemble(
             system_instructions="S",
             current_user_message="C",
             recent_messages=messages,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert snapshot.estimated_units <= budget.available_units
@@ -506,23 +534,25 @@ class TestBudgetAndShrinking:
         assert len(snapshot.recent_messages) < len(messages)
 
     def test_shrinker_invoked_only_when_required(self) -> None:
-        budget = ContextBudget(max_input_units=10, reserved_output_units=0, safety_margin=0)
+        budget = ContextBudget(
+            max_input_units=10, reserved_output_units=0, safety_margin=0
+        )
         shrinker = FakeShrinker()
         manager = self.make_manager(budget=budget, shrinker=shrinker, recent_turns=2)
-        messages = [
-            message(f"m{i}", "user", "x" * 30) for i in range(8)
-        ]
+        messages = [message(f"m{i}", "user", "x" * 30) for i in range(8)]
         manager.assemble(
             system_instructions="S",
             current_user_message="C",
             recent_messages=messages,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert shrinker.calls == 1
 
     def test_shrinker_failure_degrades(self) -> None:
-        budget = ContextBudget(max_input_units=10, reserved_output_units=0, safety_margin=0)
+        budget = ContextBudget(
+            max_input_units=10, reserved_output_units=0, safety_margin=0
+        )
         shrinker = FakeShrinker()
         shrinker.raise_on_shrink = True
         manager = self.make_manager(budget=budget, shrinker=shrinker, recent_turns=2)
@@ -531,7 +561,7 @@ class TestBudgetAndShrinking:
             system_instructions="S",
             current_user_message="C",
             recent_messages=messages,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert snapshot.compressed_history is None
@@ -539,20 +569,24 @@ class TestBudgetAndShrinking:
         assert snapshot.current_user_message == "C"
 
     def test_system_and_current_never_removed(self) -> None:
-        budget = ContextBudget(max_input_units=2, reserved_output_units=0, safety_margin=0)
+        budget = ContextBudget(
+            max_input_units=2, reserved_output_units=0, safety_margin=0
+        )
         manager = self.make_manager(budget=budget)
         snapshot = manager.assemble(
             system_instructions="SYSTEM",
             current_user_message="CURRENT",
             recent_messages=[message("m1", "user", "x" * 50)],
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert snapshot.system_instructions == "SYSTEM"
         assert snapshot.current_user_message == "CURRENT"
 
     def test_compressed_history_uses_older_messages(self) -> None:
-        budget = ContextBudget(max_input_units=8, reserved_output_units=0, safety_margin=0)
+        budget = ContextBudget(
+            max_input_units=8, reserved_output_units=0, safety_margin=0
+        )
         shrinker = FakeShrinker(summary="SUMMARY")
         manager = self.make_manager(budget=budget, shrinker=shrinker, recent_turns=2)
         messages = [message(f"m{i}", "user", "x" * 30) for i in range(8)]
@@ -560,7 +594,7 @@ class TestBudgetAndShrinking:
             system_instructions="S",
             current_user_message="C",
             recent_messages=messages,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         # recent window = last 4; older = first 4 -> shrinker got the older block.
@@ -571,7 +605,9 @@ class TestBudgetAndShrinking:
         assert "SUMMARY" in snapshot.render()
 
     def test_no_persistence_of_compressed_context(self) -> None:
-        budget = ContextBudget(max_input_units=8, reserved_output_units=0, safety_margin=0)
+        budget = ContextBudget(
+            max_input_units=8, reserved_output_units=0, safety_margin=0
+        )
         memory_provider = FakeMemoryProvider([make_memory("User fact", "mem-1")])
         shrinker = FakeShrinker(summary="SUMMARY")
         manager = ContextManager(
@@ -585,7 +621,7 @@ class TestBudgetAndShrinking:
             system_instructions="S",
             current_user_message="C",
             recent_messages=messages,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         assert snapshot.compressed_history == "SUMMARY"
@@ -593,7 +629,9 @@ class TestBudgetAndShrinking:
         assert shrinker.last_max_units is not None and shrinker.last_max_units >= 0
 
     def test_recent_messages_preserved_verbatim(self) -> None:
-        budget = ContextBudget(max_input_units=12, reserved_output_units=0, safety_margin=0)
+        budget = ContextBudget(
+            max_input_units=12, reserved_output_units=0, safety_margin=0
+        )
         shrinker = FakeShrinker(summary="SUMMARY")
         manager = self.make_manager(budget=budget, shrinker=shrinker, recent_turns=2)
         messages = [message(f"m{i}", "user", "x" * 30) for i in range(8)]
@@ -601,7 +639,7 @@ class TestBudgetAndShrinking:
             system_instructions="S",
             current_user_message="C",
             recent_messages=messages,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
         # Some recent messages survive, verbatim and in order.
@@ -617,7 +655,9 @@ class TestTinyBudgetImportantScenario:
     def test_tiny_budget_long_conversation(self) -> None:
         # Budget is small enough that the recent window fits only after the
         # older window is compressed into the leftover space.
-        budget = ContextBudget(max_input_units=20, reserved_output_units=0, safety_margin=0)
+        budget = ContextBudget(
+            max_input_units=20, reserved_output_units=0, safety_margin=0
+        )
         shrinker = FakeShrinker(summary="OLDER SUMMARY")
         raw_conversation = [message(f"m{i}", "user", "y" * 4) for i in range(8)]
         original = list(raw_conversation)
@@ -631,7 +671,7 @@ class TestTinyBudgetImportantScenario:
             system_instructions="SYSTEM",
             current_user_message="CURRENT",
             recent_messages=raw_conversation,
-            conversation_id="conv-1",
+            _conversation_id="conv-1",
             active_project_id=None,
         )
 

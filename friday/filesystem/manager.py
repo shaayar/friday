@@ -75,7 +75,8 @@ class FileSystemManager:
         stat = target.stat()
         if stat.st_size > self._read_limit_bytes:
             raise LimitError(
-                f"File exceeds read limit of {self._read_limit_bytes} bytes: {target} ({stat.st_size} bytes)"
+                f"File exceeds read limit of {self._read_limit_bytes} bytes: "
+                f"{target} ({stat.st_size} bytes)"
             )
 
         content = target.read_text(encoding=encoding)
@@ -105,7 +106,10 @@ class FileSystemManager:
 
         data = content.encode(encoding)
         if len(data) > self._write_limit_bytes:
-            raise LimitError(f"Content exceeds write limit of {self._write_limit_bytes} bytes ({len(data)} bytes)")
+            raise LimitError(
+                f"Content exceeds write limit of {self._write_limit_bytes} bytes "
+                f"({len(data)} bytes)"
+            )
 
         parent = target.parent
         if not parent.is_dir():
@@ -159,7 +163,9 @@ class FileSystemManager:
                 )
             )
             if len(entries) > self._list_limit:
-                raise LimitError(f"Directory exceeds listing limit of {self._list_limit} entries: {target}")
+                raise LimitError(
+                    f"Directory exceeds listing limit of {self._list_limit} entries: {target}"
+                )
         return DirectoryListing(path=target, entries=tuple(entries))
 
     def search_files(
@@ -183,9 +189,13 @@ class FileSystemManager:
         if not root.is_dir():
             raise NotDirectoryError(f"Path is not a directory: {root}")
 
-        depth_limit = self._search_max_depth if max_depth is None else min(max_depth, self._search_max_depth)
+        depth_limit = (
+            self._search_max_depth if max_depth is None else min(max_depth, self._search_max_depth)
+        )
         result_limit = (
-            self._search_max_results if max_results is None else min(max_results, self._search_max_results)
+            self._search_max_results
+            if max_results is None
+            else min(max_results, self._search_max_results)
         )
 
         regex = re.compile(pattern)

@@ -259,7 +259,9 @@ class TestTransitions:
         assert promoted.created_at == NOW
 
     def test_pending_to_rejected(self) -> None:
-        rejected = make_pending().mark_rejected("duplicate of existing memory", updated_at=LATER)
+        rejected = make_pending().mark_rejected(
+            "duplicate of existing memory", updated_at=LATER
+        )
         assert rejected.status is PromotionStatus.REJECTED
         assert rejected.resolution_reason == "duplicate of existing memory"
         assert rejected.updated_at == LATER
@@ -342,7 +344,9 @@ class TestTransitions:
 class TestTransientFailures:
     def test_retry_count_increments_and_stays_pending(self) -> None:
         promotion = make_pending()
-        after_first = promotion.record_transient_failure("memory.db unavailable", updated_at=LATER)
+        after_first = promotion.record_transient_failure(
+            "memory.db unavailable", updated_at=LATER
+        )
         assert after_first.status is PromotionStatus.PENDING
         assert after_first.retry_count == 1
         assert after_first.last_error == "memory.db unavailable"

@@ -109,8 +109,7 @@ class TestExtraction:
         llm = FakeLLM(VALID_JSON)
         extractor = self._extractor(llm, window_size=20)
         messages = [
-            message(f"old-{i}", "user", f"Old statement {i}.")
-            for i in range(30)
+            message(f"old-{i}", "user", f"Old statement {i}.") for i in range(30)
         ]
         await extractor.extract(messages, conversation_id="conv-1")
 
@@ -188,7 +187,9 @@ class TestParsing:
 
     @pytest.mark.asyncio
     async def test_top_level_object_with_facts_key(self) -> None:
-        llm = FakeLLM('{"facts": [{"content": "User likes tea.", "type": "user_fact"}]}')
+        llm = FakeLLM(
+            '{"facts": [{"content": "User likes tea.", "type": "user_fact"}]}'
+        )
         extractor = MemoryExtractor(llm)
         candidates = await extractor.extract(
             messages_from(message("m1", "user", "I like tea.")),
@@ -228,7 +229,9 @@ class TestParsing:
 
     @pytest.mark.asyncio
     async def test_non_object_items_skipped(self) -> None:
-        llm = FakeLLM('[42, "string", {"content": "User likes tea.", "type": "user_fact"}]')
+        llm = FakeLLM(
+            '[42, "string", {"content": "User likes tea.", "type": "user_fact"}]'
+        )
         extractor = MemoryExtractor(llm)
         candidates = await extractor.extract(
             messages_from(message("m1", "user", "I like tea.")),

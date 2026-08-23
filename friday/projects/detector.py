@@ -27,7 +27,11 @@ class ProjectDetector:
         `cwd` defaults to the process working directory. The path is
         resolved before matching. Longest registered root wins.
         """
-        resolved = Path(cwd).expanduser().resolve(strict=False) if cwd is not None else Path.cwd().resolve()
+        resolved = (
+            Path(cwd).expanduser().resolve(strict=False)
+            if cwd is not None
+            else Path.cwd().resolve()
+        )
         project = self._registry.project_containing(resolved)
         if project is None:
             return None

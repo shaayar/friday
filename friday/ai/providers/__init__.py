@@ -11,7 +11,9 @@ from friday.config import config
 
 logger = logging.getLogger("friday-agent")
 
-# Speech to Text (STT), Text to Speech (TTS), and Large Language Model (LLM) builders based on configuration.
+
+# Speech to Text (STT), Text to Speech (TTS), and Large Language Model
+# (LLM) builders based on configuration.
 def build_stt():
     if config.STT_PROVIDER == "sarvam":
         logger.info("STT → Sarvam Saaras v3")

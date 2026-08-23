@@ -12,7 +12,6 @@ tools; the registry only persists grants that the host authorizes.
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,7 +39,9 @@ class ProjectRegistry:
     """Stores and persists registered projects and their authorized roots."""
 
     def __init__(self, storage_path: str | Path | None = None) -> None:
-        self._storage_path = Path(storage_path) if storage_path is not None else default_storage_path()
+        self._storage_path = (
+            Path(storage_path) if storage_path is not None else default_storage_path()
+        )
         self._projects: dict[str, Project] = {}
         self._load()
 
@@ -61,7 +62,9 @@ class ProjectRegistry:
             raise RootNotFoundError(f"Root does not exist or is not a directory: {resolved_root}")
 
         grant_permissions = (
-            frozenset(permissions) if permissions is not None else frozenset({READ_PERMISSION, WRITE_PERMISSION})
+            frozenset(permissions)
+            if permissions is not None
+            else frozenset({READ_PERMISSION, WRITE_PERMISSION})
         )
         unknown = grant_permissions - _KNOWN_PERMISSIONS
         if unknown:
@@ -133,7 +136,9 @@ class ProjectRegistry:
         try:
             payload = json.loads(self._storage_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise RegistryCorruptError(f"Cannot read registry file {self._storage_path}: {exc}") from exc
+            raise RegistryCorruptError(
+                f"Cannot read registry file {self._storage_path}: {exc}"
+            ) from exc
 
         # Accept both the current ("projects") and legacy ("grants") payload keys.
         entries = payload.get("projects") or payload.get("grants") or {}
@@ -142,7 +147,7 @@ class ProjectRegistry:
             project = Project(
                 id=raw["id"],
                 root=Path(raw["root"]),
-                name=raw.get("name") or raw.get("label") or Path(raw["root"]),
+                name=raw.get("name") or raw.get("label") or str(raw["root"]),
                 permissions=frozenset(raw["permissions"]),
                 created_at=raw["created_at"],
             )
@@ -163,6 +168,6 @@ class ProjectRegistry:
             }
         }
         tmp = self._storage_path.with_name(self._storage_path.name + ".tmp")
-        with open(tmp, "w", encoding="utf-8") as handle:
+        with tmp.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
-        os.replace(tmp, self._storage_path)
+        tmp.replace(self._storage_path)

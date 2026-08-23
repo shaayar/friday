@@ -55,7 +55,12 @@ class SQLiteMemoryStore:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object | None,
+    ) -> None:
         self.close()
 
     def _initialize_schema(self) -> None:
@@ -87,7 +92,8 @@ class SQLiteMemoryStore:
                     supersedes TEXT,
                     superseded_by TEXT,
                     CHECK (scope IN ('user', 'project', 'conversation')),
-                    CHECK (type IN ('user_fact', 'project_fact', 'project_constraint', 'project_decision', 'conversation_summary')),
+                    CHECK (type IN ('user_fact', 'project_fact', 'project_constraint',
+                        'project_decision', 'conversation_summary')),
                     CHECK (status IN ('active', 'superseded', 'invalidated')),
                     CHECK (confidence IN ('explicit', 'inferred', 'tentative')),
                     CHECK (valid_until IS NULL OR valid_until >= valid_from),
@@ -146,7 +152,8 @@ class SQLiteMemoryStore:
             )
             self._conn.execute(
                 """
-                CREATE INDEX idx_memory_provenance_conversation ON memory_provenance(conversation_id)
+                CREATE INDEX idx_memory_provenance_conversation
+                ON memory_provenance(conversation_id)
                 """
             )
 
@@ -163,7 +170,8 @@ class SQLiteMemoryStore:
             )
             self._conn.execute(
                 """
-                CREATE INDEX idx_memory_source_messages_message ON memory_source_messages(message_id)
+                CREATE INDEX idx_memory_source_messages_message
+                ON memory_source_messages(message_id)
                 """
             )
 
@@ -219,9 +227,7 @@ class SQLiteMemoryStore:
 
     def get(self, memory_id: str) -> Memory | None:
         """Retrieve a memory by ID."""
-        row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ?", (memory_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_memory(row)
@@ -273,7 +279,7 @@ class SQLiteMemoryStore:
     ) -> list[Memory]:
         """Query memories with deterministic filters."""
         where_clauses = []
-        params = []
+        params: list[str | int] = []
 
         if scope is not None:
             where_clauses.append("scope = ?")
@@ -300,9 +306,7 @@ class SQLiteMemoryStore:
         if valid_at is not None:
             _require_aware_timestamp("valid_at", valid_at)
             valid_at_iso = valid_at.isoformat(timespec="microseconds")
-            where_clauses.append(
-                "valid_from <= ? AND (valid_until IS NULL OR ? < valid_until)"
-            )
+            where_clauses.append("valid_from <= ? AND (valid_until IS NULL OR ? < valid_until)")
             params.extend([valid_at_iso, valid_at_iso])
 
         if created_after is not None:
@@ -333,6 +337,9 @@ class SQLiteMemoryStore:
 
     def _memory_to_params(self, memory: Memory) -> tuple:
         """Convert Memory to SQL parameters."""
+        # These are guaranteed non-None by Memory.__post_init__
+        assert memory.updated_at is not None
+        assert memory.valid_from is not None
         return (
             memory.id,
             memory.type.value,
@@ -379,9 +386,7 @@ class SQLiteMemoryStore:
                 )
         else:
             # Remove provenance if none
-            self._conn.execute(
-                "DELETE FROM memory_provenance WHERE memory_id = ?", (memory.id,)
-            )
+            self._conn.execute("DELETE FROM memory_provenance WHERE memory_id = ?", (memory.id,))
             self._conn.execute(
                 "DELETE FROM memory_source_messages WHERE memory_id = ?", (memory.id,)
             )
@@ -389,7 +394,8 @@ class SQLiteMemoryStore:
     def _load_provenance(self, memory_id: str) -> MemoryProvenance:
         """Load provenance data for a memory."""
         prov_row = self._conn.execute(
-            "SELECT conversation_id FROM memory_provenance WHERE memory_id = ?", (memory_id,)
+            "SELECT conversation_id FROM memory_provenance WHERE memory_id = ?",
+            (memory_id,),
         ).fetchone()
 
         if prov_row is None:
@@ -419,7 +425,9 @@ class SQLiteMemoryStore:
                 created_at=datetime.fromisoformat(row["created_at"]),
                 updated_at=datetime.fromisoformat(row["updated_at"]),
                 valid_from=datetime.fromisoformat(row["valid_from"]),
-                valid_until=datetime.fromisoformat(row["valid_until"]) if row["valid_until"] else None,
+                valid_until=datetime.fromisoformat(row["valid_until"])
+                if row["valid_until"]
+                else None,
                 supersedes=row["supersedes"],
                 superseded_by=row["superseded_by"],
                 project_id=row["project_id"],

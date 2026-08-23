@@ -297,7 +297,9 @@ class TestApplyBatch:
         manager.apply_batch([])
         assert manager.get_active() == []
 
-    def test_apply_batch_rolls_back_on_failure(self, manager: DurableMemoryManager) -> None:
+    def test_apply_batch_rolls_back_on_failure(
+        self, manager: DurableMemoryManager
+    ) -> None:
         """Test a failing operation rolls back the entire batch."""
         resolution = Resolution(
             kind=ResolutionKind.CREATE,

@@ -77,8 +77,12 @@ FIXED_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 # ----------------------------------------------------------------------
 
 
-def make_item(item_id: str, content: str, source_message_ids: tuple[int, ...]) -> CompactionItem:
-    return CompactionItem(item_id=item_id, content=content, source_message_ids=source_message_ids)
+def make_item(
+    item_id: str, content: str, source_message_ids: tuple[int, ...]
+) -> CompactionItem:
+    return CompactionItem(
+        item_id=item_id, content=content, source_message_ids=source_message_ids
+    )
 
 
 def make_compaction(
@@ -113,7 +117,9 @@ def seed_conversation(conv_db: Path) -> int:
         return conversation.id
 
 
-def seed_compaction(conv_db: Path, conversation_id: int, **overrides) -> ConversationCompaction:
+def seed_compaction(
+    conv_db: Path, conversation_id: int, **overrides
+) -> ConversationCompaction:
     with SQLiteCompactionStore(conv_db) as store:
         compaction = make_compaction(conversation_id=conversation_id, **overrides)
         store.save(compaction)
@@ -195,7 +201,11 @@ class FailpointMemoryManager:
         if self.fail_get_active:
             raise MemoryStorageError("memory.db unavailable (get_active failpoint)")
         return self._manager.get_active(
-            scope=scope, project_id=project_id, valid_at=valid_at, limit=limit, offset=offset
+            scope=scope,
+            project_id=project_id,
+            valid_at=valid_at,
+            limit=limit,
+            offset=offset,
         )
 
     def apply_batch(self, resolutions) -> list[Memory | None]:
@@ -207,7 +217,9 @@ class FailpointMemoryManager:
 class StorageSaveFailpoint:
     """MemoryStorage proxy that fails save() after N successful saves (mid-batch crash)."""
 
-    def __init__(self, storage: SQLiteMemoryStore, *, fail_after: int | None = None) -> None:
+    def __init__(
+        self, storage: SQLiteMemoryStore, *, fail_after: int | None = None
+    ) -> None:
         self._storage = storage
         self.fail_after = fail_after
         self.save_count = 0
@@ -263,7 +275,9 @@ class CountingMemoryManager:
 def test_group1_end_to_end_create(db_paths, conversation_id) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
 
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
@@ -355,7 +369,10 @@ def test_group2_end_to_end_supersede(db_paths, conversation_id) -> None:
         assert new.supersedes == "mem-old"
         assert new.type is MemoryType.PROJECT_FACT
         assert new.project_id == "proj-1"
-        assert new.content == "FRIDAY now uses PostgreSQL for compacted conversation persistence."
+        assert (
+            new.content
+            == "FRIDAY now uses PostgreSQL for compacted conversation persistence."
+        )
 
         superseded = memory_store.get("mem-old")
         assert superseded.status is MemoryStatus.SUPERSEDED
@@ -437,9 +454,13 @@ def test_group4_ineligible_categories(db_paths, conversation_id) -> None:
         conversation_id,
         summary="A durable project summary that must never become memory.",
         facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
-        decisions=(make_item("decision-1", "FRIDAY will persist memory in SQLite.", (3, 4)),),
+        decisions=(
+            make_item("decision-1", "FRIDAY will persist memory in SQLite.", (3, 4)),
+        ),
         changes=(make_item("change-1", "Moved message storage to SQLite.", (4, 5)),),
-        open_questions=(make_item("question-1", "Should promotion be automatic?", (6,)),),
+        open_questions=(
+            make_item("question-1", "Should promotion be automatic?", (6,)),
+        ),
     )
 
     promotion_store = SQLitePromotionStore(conv_db)
@@ -448,7 +469,9 @@ def test_group4_ineligible_categories(db_paths, conversation_id) -> None:
     resolver = MemoryResolver()
     counting_manager = CountingMemoryManager(manager)
     counting_resolver = CountingResolver(resolver)
-    promoter = ConversationMemoryPromoter(promotion_store, counting_manager, counting_resolver)
+    promoter = ConversationMemoryPromoter(
+        promotion_store, counting_manager, counting_resolver
+    )
     try:
         result = promoter.promote(compaction, project_id="proj-1")
         by_id = {r.item_id: r for r in result.items}
@@ -467,8 +490,12 @@ def test_group4_ineligible_categories(db_paths, conversation_id) -> None:
         assert promotion_store.get("decision-1").status is PromotionStatus.PROMOTED
 
         # SUMMARY never becomes a CONVERSATION_SUMMARY memory.
-        assert not any(m.type is MemoryType.CONVERSATION_SUMMARY for m in memory_store.query())
-        assert not any("must never become memory" in m.content for m in memory_store.query())
+        assert not any(
+            m.type is MemoryType.CONVERSATION_SUMMARY for m in memory_store.query()
+        )
+        assert not any(
+            "must never become memory" in m.content for m in memory_store.query()
+        )
 
         # The resolver was invoked exactly once (one coherent eligible batch).
         assert counting_resolver.calls == 1
@@ -485,10 +512,14 @@ def test_group4_ineligible_categories(db_paths, conversation_id) -> None:
 # ======================================================================
 
 
-def test_group5_user_fact_ignores_supplied_project_id(db_paths, conversation_id) -> None:
+def test_group5_user_fact_ignores_supplied_project_id(
+    db_paths, conversation_id
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
     try:
@@ -504,7 +535,9 @@ def test_group5_user_fact_ignores_supplied_project_id(db_paths, conversation_id)
 def test_group5_project_fact_with_project_id(db_paths, conversation_id) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "FRIDAY uses Python 3.12.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "FRIDAY uses Python 3.12.", (1, 2)),),
     )
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
     try:
@@ -518,10 +551,14 @@ def test_group5_project_fact_with_project_id(db_paths, conversation_id) -> None:
         memory_store.close()
 
 
-def test_group5_project_fact_without_project_id_rejected(db_paths, conversation_id) -> None:
+def test_group5_project_fact_without_project_id_rejected(
+    db_paths, conversation_id
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "FRIDAY uses Python 3.12.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "FRIDAY uses Python 3.12.", (1, 2)),),
     )
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
     try:
@@ -538,7 +575,9 @@ def test_group5_project_fact_without_project_id_rejected(db_paths, conversation_
 def test_group5_project_decision_with_project_id(db_paths, conversation_id) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, decisions=(make_item("decision-1", "Use SQLite for compaction.", (3, 4)),)
+        conv_db,
+        conversation_id,
+        decisions=(make_item("decision-1", "Use SQLite for compaction.", (3, 4)),),
     )
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
     try:
@@ -552,10 +591,14 @@ def test_group5_project_decision_with_project_id(db_paths, conversation_id) -> N
         memory_store.close()
 
 
-def test_group5_project_decision_without_project_id_rejected(db_paths, conversation_id) -> None:
+def test_group5_project_decision_without_project_id_rejected(
+    db_paths, conversation_id
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, decisions=(make_item("decision-1", "Use SQLite for compaction.", (3, 4)),)
+        conv_db,
+        conversation_id,
+        decisions=(make_item("decision-1", "Use SQLite for compaction.", (3, 4)),),
     )
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
     try:
@@ -568,7 +611,9 @@ def test_group5_project_decision_without_project_id_rejected(db_paths, conversat
         memory_store.close()
 
 
-def test_group5_project_name_in_content_never_invents_project_id(db_paths, conversation_id) -> None:
+def test_group5_project_name_in_content_never_invents_project_id(
+    db_paths, conversation_id
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
         conv_db,
@@ -609,7 +654,9 @@ def test_group6_provenance_propagation(db_paths, conversation_id) -> None:
         assert memory.provenance.source_message_ids == ("2", "5", "7")
         # No message content is duplicated into provenance.
         assert memory.content != "Message 2"
-        assert not any(mid == memory.content for mid in memory.provenance.source_message_ids)
+        assert not any(
+            mid == memory.content for mid in memory.provenance.source_message_ids
+        )
     finally:
         promotion_store.close()
         memory_store.close()
@@ -623,7 +670,9 @@ def test_group6_provenance_propagation(db_paths, conversation_id) -> None:
 def test_group7_idempotent_success(db_paths, conversation_id) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
 
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
@@ -649,10 +698,14 @@ def test_group7_idempotent_success(db_paths, conversation_id) -> None:
 # ======================================================================
 
 
-def test_group8_memory_success_ledger_failure_then_reconcile(db_paths, conversation_id) -> None:
+def test_group8_memory_success_ledger_failure_then_reconcile(
+    db_paths, conversation_id
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
 
     failing_store = FailpointPromotionStore(conv_db, fail_replace=True)
@@ -701,10 +754,14 @@ def test_group8_memory_success_ledger_failure_then_reconcile(db_paths, conversat
 # ======================================================================
 
 
-def test_group9_memory_failure_isolation_then_recovery(db_paths, conversation_id) -> None:
+def test_group9_memory_failure_isolation_then_recovery(
+    db_paths, conversation_id
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
 
     promotion_store = SQLitePromotionStore(conv_db)
@@ -821,7 +878,9 @@ def test_group11_multiple_items_independent_outcomes(db_paths, conversation_id) 
             make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),
             make_item("fact-2", rejected_content, (2, 3)),
         ),
-        decisions=(make_item("decision-1", "Deploy the service stack as containers.", (3, 4)),),
+        decisions=(
+            make_item("decision-1", "Deploy the service stack as containers.", (3, 4)),
+        ),
         changes=(make_item("change-1", "Moved storage to SQLite.", (4, 5)),),
         open_questions=(make_item("question-1", "Automatic promotion?", (6,)),),
     )
@@ -832,7 +891,9 @@ def test_group11_multiple_items_independent_outcomes(db_paths, conversation_id) 
     resolver = MemoryResolver()
     counting_resolver = CountingResolver(resolver)
     counting_manager = CountingMemoryManager(manager)
-    promoter = ConversationMemoryPromoter(promotion_store, counting_manager, counting_resolver)
+    promoter = ConversationMemoryPromoter(
+        promotion_store, counting_manager, counting_resolver
+    )
 
     try:
         result = promoter.promote(compaction, project_id="proj-1")
@@ -898,7 +959,9 @@ def _promote_in_thread(
         promotion_store = BarrierPromotionStore(conv_db, barrier)
         memory_store = SQLiteMemoryStore(mem_db)
         manager = DurableMemoryManager(memory_store)
-        promoter = ConversationMemoryPromoter(promotion_store, manager, MemoryResolver())
+        promoter = ConversationMemoryPromoter(
+            promotion_store, manager, MemoryResolver()
+        )
         results.append(promoter.promote(compaction, project_id="proj-1"))
         promotion_store.close()
         memory_store.close()
@@ -909,7 +972,9 @@ def _promote_in_thread(
 def test_group12_repeated_promotion_across_instances(db_paths, conversation_id) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
 
     promoter_a, promotion_store_a, memory_store_a = default_promoter(conv_db, mem_db)
@@ -932,9 +997,13 @@ def test_group12_repeated_promotion_across_instances(db_paths, conversation_id) 
         memory_store_b.close()
 
 
-def test_group12_concurrent_ledger_save_is_authoritative(db_paths, conversation_id) -> None:
+def test_group12_concurrent_ledger_save_is_authoritative(
+    db_paths, conversation_id
+) -> None:
     conv_db, _mem_db = db_paths
-    seed_compaction(conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu.", (1, 2)),))
+    seed_compaction(
+        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu.", (1, 2)),)
+    )
     promotion = CompactionPromotion.pending(
         item_id="fact-1", compaction_id="comp-1", category=CompactionItemCategory.FACTS
     )
@@ -970,10 +1039,14 @@ def test_group12_concurrent_ledger_save_is_authoritative(db_paths, conversation_
         assert len(store.list_for_compaction("comp-1")) == 1
 
 
-def test_group12_concurrent_promote_race_has_no_duplicates(db_paths, conversation_id) -> None:
+def test_group12_concurrent_promote_race_has_no_duplicates(
+    db_paths, conversation_id
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
 
     # Both databases already exist with full schema in production; initialize
@@ -989,7 +1062,8 @@ def test_group12_concurrent_promote_race_has_no_duplicates(db_paths, conversatio
     errors: list[Exception] = []
     threads = [
         threading.Thread(
-            target=_promote_in_thread, args=(conv_db, mem_db, compaction, barrier, results, errors)
+            target=_promote_in_thread,
+            args=(conv_db, mem_db, compaction, barrier, results, errors),
         )
         for _ in range(2)
     ]
@@ -1025,7 +1099,9 @@ def test_group13_boundary_a_before_memory_write(db_paths, conversation_id) -> No
     """A: failure before any memory write."""
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
     promotion_store = SQLitePromotionStore(conv_db)
     memory_store = SQLiteMemoryStore(mem_db)
@@ -1086,11 +1162,15 @@ def test_group13_boundary_c_d_after_memory_commit_before_during_ledger_update(
     """C/D: memory committed, ledger update fails → PENDING; retry reconciles."""
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
     failing_store = FailpointPromotionStore(conv_db, fail_replace=True)
     memory_store = SQLiteMemoryStore(mem_db)
-    promoter = ConversationMemoryPromoter(failing_store, DurableMemoryManager(memory_store), MemoryResolver())
+    promoter = ConversationMemoryPromoter(
+        failing_store, DurableMemoryManager(memory_store), MemoryResolver()
+    )
     try:
         result = promoter.promote(compaction, project_id="proj-1")
         assert result.items[0].outcome is PromotionOutcome.FAILED
@@ -1107,11 +1187,15 @@ def test_group13_boundary_c_d_after_memory_commit_before_during_ledger_update(
         memory_store.close()
 
 
-def test_group13_boundary_e_after_ledger_promoted_persisted(db_paths, conversation_id) -> None:
+def test_group13_boundary_e_after_ledger_promoted_persisted(
+    db_paths, conversation_id
+) -> None:
     """E: fully committed → retry is NOOP; no duplicate possible."""
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
     try:
@@ -1158,7 +1242,9 @@ def test_group14_promotion_does_not_mutate(db_paths, conversation_id) -> None:
 
         for item in (*compaction.facts, *compaction.decisions, *compaction.changes):
             assert item == before_items[item.item_id]
-            assert item.source_message_ids == before_items[item.item_id].source_message_ids
+            assert (
+                item.source_message_ids == before_items[item.item_id].source_message_ids
+            )
         assert compaction.summary == "The conversation covered setup and design."
 
         with SQLiteConversationStore(conv_db) as store:
@@ -1179,17 +1265,23 @@ def test_group14_promotion_does_not_mutate(db_paths, conversation_id) -> None:
 # ======================================================================
 
 
-def test_group15_failures_isolated_from_conversation_state(db_paths, conversation_id, tmp_path) -> None:
+def test_group15_failures_isolated_from_conversation_state(
+    db_paths, conversation_id, tmp_path
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
     with SQLiteConversationStore(conv_db) as store:
         before_messages = store.get_recent_messages(conversation_id, limit=100)
 
     failing_store = FailpointPromotionStore(conv_db, fail_replace=True)
     memory_store = SQLiteMemoryStore(mem_db)
-    promoter = ConversationMemoryPromoter(failing_store, DurableMemoryManager(memory_store), MemoryResolver())
+    promoter = ConversationMemoryPromoter(
+        failing_store, DurableMemoryManager(memory_store), MemoryResolver()
+    )
     try:
         # A hard ledger failure mid-promotion.
         result = promoter.promote(compaction, project_id="proj-1")
@@ -1197,11 +1289,15 @@ def test_group15_failures_isolated_from_conversation_state(db_paths, conversatio
 
         # Raw messages untouched.
         with SQLiteConversationStore(conv_db) as store:
-            assert store.get_recent_messages(conversation_id, limit=100) == before_messages
+            assert (
+                store.get_recent_messages(conversation_id, limit=100) == before_messages
+            )
         # Compaction not deleted; boundary not moved (still exactly one compaction).
         with SQLiteCompactionStore(conv_db) as store:
             assert store.get("comp-1") is not None
-            assert [c.compaction_id for c in store.list_for_conversation(conversation_id)] == ["comp-1"]
+            assert [
+                c.compaction_id for c in store.list_for_conversation(conversation_id)
+            ] == ["comp-1"]
         # No arbitrary files written outside the two databases.
         assert sorted(os.listdir(tmp_path)) == sorted(["conversations.db", "memory.db"])
     finally:
@@ -1216,7 +1312,9 @@ def test_group15_failures_isolated_from_conversation_state(db_paths, conversatio
 
 def test_group17_reopen_pending_state(db_paths, conversation_id) -> None:
     conv_db, _mem_db = db_paths
-    seed_compaction(conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu.", (1, 2)),))
+    seed_compaction(
+        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu.", (1, 2)),)
+    )
     pending = CompactionPromotion.pending(
         item_id="fact-1", compaction_id="comp-1", category=CompactionItemCategory.FACTS
     )
@@ -1233,7 +1331,9 @@ def test_group17_reopen_pending_state(db_paths, conversation_id) -> None:
 def test_group17_reopen_promoted_state(db_paths, conversation_id) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
     try:
@@ -1256,7 +1356,9 @@ def test_group17_reopen_promoted_state(db_paths, conversation_id) -> None:
 def test_group17_reopen_rejected_state(db_paths, conversation_id) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, decisions=(make_item("decision-1", "Use SQLite.", (3, 4)),)
+        conv_db,
+        conversation_id,
+        decisions=(make_item("decision-1", "Use SQLite.", (3, 4)),),
     )
     promoter, promotion_store, memory_store = default_promoter(conv_db, mem_db)
     try:
@@ -1274,10 +1376,14 @@ def test_group17_reopen_rejected_state(db_paths, conversation_id) -> None:
         assert store.query() == []
 
 
-def test_group17_reopen_reconciled_state_persists_as_promoted(db_paths, conversation_id) -> None:
+def test_group17_reopen_reconciled_state_persists_as_promoted(
+    db_paths, conversation_id
+) -> None:
     conv_db, mem_db = db_paths
     compaction = seed_compaction(
-        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),)
+        conv_db,
+        conversation_id,
+        facts=(make_item("fact-1", "I use Ubuntu on my desktop.", (1, 2)),),
     )
     existing = Memory(
         type=MemoryType.USER_FACT,

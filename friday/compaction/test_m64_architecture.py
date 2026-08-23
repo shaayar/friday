@@ -30,8 +30,12 @@ from friday.memory.sqlite_store import SQLiteConversationStore
 FIXED_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
-def make_item(item_id: str, content: str, source_message_ids: tuple[int, ...]) -> CompactionItem:
-    return CompactionItem(item_id=item_id, content=content, source_message_ids=source_message_ids)
+def make_item(
+    item_id: str, content: str, source_message_ids: tuple[int, ...]
+) -> CompactionItem:
+    return CompactionItem(
+        item_id=item_id, content=content, source_message_ids=source_message_ids
+    )
 
 
 def make_compaction(
@@ -59,11 +63,14 @@ def seed_conversation(conv_db: Path) -> int:
         return conversation.id
 
 
-def seed_compaction(conv_db: Path, conversation_id: int, **overrides) -> ConversationCompaction:
+def seed_compaction(
+    conv_db: Path, conversation_id: int, **overrides
+) -> ConversationCompaction:
     with SQLiteCompactionStore(conv_db) as store:
         compaction = make_compaction(conversation_id=conversation_id, **overrides)
         store.save(compaction)
     return compaction
+
 
 PROMOTION_PATH_MODULES = (
     "friday.compaction.promoter",
@@ -85,7 +92,9 @@ def _module_source(module_name: str) -> str:
 
 
 @pytest.mark.parametrize("module_name", PROMOTION_PATH_MODULES)
-def test_group16_promotion_path_has_no_unexpected_dependencies(module_name: str) -> None:
+def test_group16_promotion_path_has_no_unexpected_dependencies(
+    module_name: str,
+) -> None:
     source = _module_source(module_name)
     for forbidden in (
         "livekit",
@@ -102,7 +111,9 @@ def test_group16_promotion_path_has_no_unexpected_dependencies(module_name: str)
         "urllib.request",
         "socket",
     ):
-        assert forbidden not in source, f"{module_name} references forbidden token {forbidden!r}"
+        assert forbidden not in source, (
+            f"{module_name} references forbidden token {forbidden!r}"
+        )
 
 
 def test_group16_promotion_is_explicit_local_operation(tmp_path: Path) -> None:
@@ -117,7 +128,10 @@ def test_group16_promotion_is_explicit_local_operation(tmp_path: Path) -> None:
     from friday.memory.durable_manager import DurableMemoryManager
     from friday.memory.resolver import MemoryResolver
 
-    with SQLitePromotionStore(conv_db) as promotion_store, SQLiteMemoryStore(mem_db) as memory_store:
+    with (
+        SQLitePromotionStore(conv_db) as promotion_store,
+        SQLiteMemoryStore(mem_db) as memory_store,
+    ):
         promoter = ConversationMemoryPromoter(
             promotion_store, DurableMemoryManager(memory_store), MemoryResolver()
         )
@@ -125,7 +139,10 @@ def test_group16_promotion_is_explicit_local_operation(tmp_path: Path) -> None:
         assert result.items[0].outcome.value == "promoted"
 
     # No network, no external service: only the two local databases exist.
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["conversations.db", "memory.db"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "conversations.db",
+        "memory.db",
+    ]
 
 
 # ======================================================================
@@ -134,7 +151,9 @@ def test_group16_promotion_is_explicit_local_operation(tmp_path: Path) -> None:
 
 
 def _seed_valid_pending(conv_db: Path, conversation_id: int) -> None:
-    seed_compaction(conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu.", (1, 2)),))
+    seed_compaction(
+        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu.", (1, 2)),)
+    )
     with SQLitePromotionStore(conv_db) as store:
         store.save(
             CompactionPromotion.pending(
@@ -249,9 +268,7 @@ def test_group18_corrupt_memory_row_raises_memory_corrupt(tmp_path: Path) -> Non
     conn = sqlite3.connect(mem_db)
     try:
         conn.execute("PRAGMA ignore_check_constraints = ON")
-        conn.execute(
-            "UPDATE memories SET status = 'gone' WHERE id = 'mem-1'"
-        )
+        conn.execute("UPDATE memories SET status = 'gone' WHERE id = 'mem-1'")
         conn.commit()
     finally:
         conn.close()
@@ -304,7 +321,9 @@ def test_group19_promotion_store_does_not_create_memory_db(tmp_path: Path) -> No
     conv_db = tmp_path / "conversations.db"
     mem_db = tmp_path / "memory.db"
     conversation_id = seed_conversation(conv_db)
-    seed_compaction(conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu.", (1, 2)),))
+    seed_compaction(
+        conv_db, conversation_id, facts=(make_item("fact-1", "I use Ubuntu.", (1, 2)),)
+    )
     with SQLitePromotionStore(conv_db) as store:
         store.save(
             CompactionPromotion.pending(
@@ -320,7 +339,9 @@ def test_group19_memory_store_does_not_create_conversations_db(tmp_path: Path) -
     conv_db = tmp_path / "conversations.db"
     mem_db = tmp_path / "memory.db"
     with SQLiteMemoryStore(mem_db) as store:
-        store.save(Memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="X."))
+        store.save(
+            Memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="X.")
+        )
     assert not conv_db.exists()
 
 
@@ -394,7 +415,9 @@ def test_group19_no_cross_database_transaction_claimed() -> None:
     assert "sqlite3.connect" not in source
     assert "transaction(" not in source
     # ADR-025 documents the no-cross-DB-transaction guarantee.
-    with open(Path(__file__).parent.parent.parent / "docs" / "ADR-025.md", encoding="utf-8") as fh:
+    with open(
+        Path(__file__).parent.parent.parent / "docs" / "ADR-025.md", encoding="utf-8"
+    ) as fh:
         adr_text = fh.read()
     assert "cross-database" in adr_text.lower() or "cross-DB" in adr_text.lower()
     assert "exactly-once" in adr_text.lower()

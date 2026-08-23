@@ -126,7 +126,9 @@ class TestSQLiteMemoryStore:
 
     def test_query_by_scope(self, store: SQLiteMemoryStore) -> None:
         """Test querying memories by scope."""
-        user_mem = self._make_memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="User fact")
+        user_mem = self._make_memory(
+            type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="User fact"
+        )
         project_mem = self._make_memory(
             type=MemoryType.PROJECT_FACT,
             scope=MemoryScope.PROJECT,
@@ -176,8 +178,12 @@ class TestSQLiteMemoryStore:
     def test_query_by_status(self, store: SQLiteMemoryStore) -> None:
         """Test querying memories by status."""
         active = self._make_memory(status=MemoryStatus.ACTIVE)
-        superseded = self._make_memory(id="superseded-id", status=MemoryStatus.SUPERSEDED)
-        invalidated = self._make_memory(id="invalidated-id", status=MemoryStatus.INVALIDATED)
+        superseded = self._make_memory(
+            id="superseded-id", status=MemoryStatus.SUPERSEDED
+        )
+        invalidated = self._make_memory(
+            id="invalidated-id", status=MemoryStatus.INVALIDATED
+        )
         store.save(active)
         store.save(superseded)
         store.save(invalidated)
@@ -207,7 +213,9 @@ class TestSQLiteMemoryStore:
             content="Project 2 fact",
             project_id="proj-2",
         )
-        user_mem = self._make_memory(type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="User fact")
+        user_mem = self._make_memory(
+            type=MemoryType.USER_FACT, scope=MemoryScope.USER, content="User fact"
+        )
         store.save(proj1_mem)
         store.save(proj2_mem)
         store.save(user_mem)
@@ -224,14 +232,18 @@ class TestSQLiteMemoryStore:
         """Test querying memories by conversation_id via provenance."""
         mem1 = self._make_memory(
             content="From conv 1",
-            provenance=MemoryProvenance(source_conversation_id="conv-1", source_message_ids=("msg-1",)),
+            provenance=MemoryProvenance(
+                source_conversation_id="conv-1", source_message_ids=("msg-1",)
+            ),
         )
         store.save(mem1)
 
         mem2 = self._make_memory(
             id="mem-2",
             content="From conv 2",
-            provenance=MemoryProvenance(source_conversation_id="conv-2", source_message_ids=("msg-2",)),
+            provenance=MemoryProvenance(
+                source_conversation_id="conv-2", source_message_ids=("msg-2",)
+            ),
         )
         store.save(mem2)
 
@@ -281,8 +293,12 @@ class TestSQLiteMemoryStore:
         """Test querying memories by creation time range."""
         base = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
         early = self._make_memory(id="early", content="Early", created_at=base)
-        middle = self._make_memory(id="middle", content="Middle", created_at=base + timedelta(days=5))
-        late = self._make_memory(id="late", content="Late", created_at=base + timedelta(days=10))
+        middle = self._make_memory(
+            id="middle", content="Middle", created_at=base + timedelta(days=5)
+        )
+        late = self._make_memory(
+            id="late", content="Late", created_at=base + timedelta(days=10)
+        )
         store.save(early)
         store.save(middle)
         store.save(late)
@@ -325,7 +341,12 @@ class TestSQLiteMemoryStore:
         ]
 
         for mem_type, scope, proj_id in types_and_scopes:
-            mem = self._make_memory(type=mem_type, scope=scope, content=f"Content for {mem_type.value}", project_id=proj_id)
+            mem = self._make_memory(
+                type=mem_type,
+                scope=scope,
+                content=f"Content for {mem_type.value}",
+                project_id=proj_id,
+            )
             store.save(mem)
 
         for mem_type, scope, proj_id in types_and_scopes:
@@ -341,7 +362,11 @@ class TestSQLiteMemoryStore:
                 MemoryScope.PROJECT: MemoryType.PROJECT_FACT,
                 MemoryScope.CONVERSATION: MemoryType.CONVERSATION_SUMMARY,
             }[scope]
-            kwargs = {"type": scope_type, "scope": scope, "content": f"Scope {scope.value}"}
+            kwargs = {
+                "type": scope_type,
+                "scope": scope,
+                "content": f"Scope {scope.value}",
+            }
             if scope == MemoryScope.PROJECT:
                 kwargs["project_id"] = "proj-1"
             mem = self._make_memory(**kwargs)
@@ -353,28 +378,55 @@ class TestSQLiteMemoryStore:
 
     def test_all_statuses(self, store: SQLiteMemoryStore) -> None:
         """Test all statuses are persisted correctly."""
-        for status in [MemoryStatus.ACTIVE, MemoryStatus.SUPERSEDED, MemoryStatus.INVALIDATED]:
-            mem = self._make_memory(id=f"mem-{status.value}", status=status, content=f"Status {status.value}")
+        for status in [
+            MemoryStatus.ACTIVE,
+            MemoryStatus.SUPERSEDED,
+            MemoryStatus.INVALIDATED,
+        ]:
+            mem = self._make_memory(
+                id=f"mem-{status.value}",
+                status=status,
+                content=f"Status {status.value}",
+            )
             store.save(mem)
 
-        for status in [MemoryStatus.ACTIVE, MemoryStatus.SUPERSEDED, MemoryStatus.INVALIDATED]:
+        for status in [
+            MemoryStatus.ACTIVE,
+            MemoryStatus.SUPERSEDED,
+            MemoryStatus.INVALIDATED,
+        ]:
             results = store.query(status=status)
             assert len(results) >= 1
 
     def test_all_confidence_levels(self, store: SQLiteMemoryStore) -> None:
         """Test all confidence levels are persisted correctly."""
-        for confidence in [MemoryConfidence.EXPLICIT, MemoryConfidence.INFERRED, MemoryConfidence.TENTATIVE]:
-            mem = self._make_memory(id=f"mem-{confidence.value}", confidence=confidence, content=f"Confidence {confidence.value}")
+        for confidence in [
+            MemoryConfidence.EXPLICIT,
+            MemoryConfidence.INFERRED,
+            MemoryConfidence.TENTATIVE,
+        ]:
+            mem = self._make_memory(
+                id=f"mem-{confidence.value}",
+                confidence=confidence,
+                content=f"Confidence {confidence.value}",
+            )
             store.save(mem)
 
-        for confidence in [MemoryConfidence.EXPLICIT, MemoryConfidence.INFERRED, MemoryConfidence.TENTATIVE]:
+        for confidence in [
+            MemoryConfidence.EXPLICIT,
+            MemoryConfidence.INFERRED,
+            MemoryConfidence.TENTATIVE,
+        ]:
             results = store.query()  # No filter, check all
             confidences = {m.confidence for m in results}
             assert confidence in confidences
 
     def test_provenance_round_trip(self, store: SQLiteMemoryStore) -> None:
         """Test provenance is saved and loaded correctly."""
-        provenance = MemoryProvenance(source_conversation_id="conv-123", source_message_ids=("msg-1", "msg-2", "msg-3"))
+        provenance = MemoryProvenance(
+            source_conversation_id="conv-123",
+            source_message_ids=("msg-1", "msg-2", "msg-3"),
+        )
         memory = self._make_memory(provenance=provenance)
         store.save(memory)
 
@@ -529,9 +581,15 @@ class TestSQLiteMemoryStore:
         assert store.get("mem-1") is not None
         assert store.get("mem-2") is not None
 
-    def test_foreign_key_cascade_delete_provenance(self, store: SQLiteMemoryStore) -> None:
+    def test_foreign_key_cascade_delete_provenance(
+        self, store: SQLiteMemoryStore
+    ) -> None:
         """Test that deleting a memory cascades to provenance."""
-        memory = self._make_memory(provenance=MemoryProvenance(source_conversation_id="conv-1", source_message_ids=("msg-1",)))
+        memory = self._make_memory(
+            provenance=MemoryProvenance(
+                source_conversation_id="conv-1", source_message_ids=("msg-1",)
+            )
+        )
         store.save(memory)
 
         # Verify provenance exists
@@ -559,7 +617,9 @@ class TestSQLiteMemoryStore:
         ).fetchall()
         assert len(msgs) == 0
 
-    def test_foreign_key_cascade_delete_supersession(self, store: SQLiteMemoryStore) -> None:
+    def test_foreign_key_cascade_delete_supersession(
+        self, store: SQLiteMemoryStore
+    ) -> None:
         """Test that deleting a superseded memory sets FK to NULL."""
         old = self._make_memory(id="old-id", content="Old")
         store.save(old)
@@ -568,7 +628,9 @@ class TestSQLiteMemoryStore:
         store.save(new)
 
         # Verify FK exists
-        row = store._conn.execute("SELECT supersedes FROM memories WHERE id = ?", ("new-id",)).fetchone()
+        row = store._conn.execute(
+            "SELECT supersedes FROM memories WHERE id = ?", ("new-id",)
+        ).fetchone()
         assert row["supersedes"] == "old-id"
 
         # Delete old memory
@@ -576,7 +638,9 @@ class TestSQLiteMemoryStore:
             store._conn.execute("DELETE FROM memories WHERE id = ?", ("old-id",))
 
         # FK should be NULL
-        row = store._conn.execute("SELECT supersedes FROM memories WHERE id = ?", ("new-id",)).fetchone()
+        row = store._conn.execute(
+            "SELECT supersedes FROM memories WHERE id = ?", ("new-id",)
+        ).fetchone()
         assert row["supersedes"] is None
 
     def test_unknown_schema_version_fails(self, temp_db_path: Path) -> None:

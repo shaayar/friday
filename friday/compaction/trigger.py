@@ -60,7 +60,9 @@ def should_compact(
 
     Returns ``True`` when compaction should run.
     """
-    message_count_since_boundary = _validate_non_negative("message_count_since_boundary", message_count_since_boundary)
+    message_count_since_boundary = _validate_non_negative(
+        "message_count_since_boundary", message_count_since_boundary
+    )
     estimated_units_since_boundary = _validate_non_negative(
         "estimated_units_since_boundary", estimated_units_since_boundary
     )

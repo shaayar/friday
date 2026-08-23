@@ -9,7 +9,6 @@ import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
-
 from friday.core.session import AssistantSession
 
 if TYPE_CHECKING:
@@ -147,7 +146,10 @@ class TestBackgroundTaskExceptions:
 
         # Verify exception was logged (not unhandled)
         # The done_callback logs with exc_info; task name is auto-generated
-        assert any("Background task" in record.message and "failed" in record.message for record in caplog.records)
+        assert any(
+            "Background task" in record.message and "failed" in record.message
+            for record in caplog.records
+        )
 
     @pytest.mark.asyncio
     async def test_background_task_failure_does_not_affect_session(self) -> None:
@@ -280,7 +282,11 @@ class TestBackgroundTaskShutdown:
         # The done_callback logs cancelled tasks at DEBUG level
         # It should NOT log at WARNING level
         warning_records = [r for r in caplog.records if r.levelno >= 30]
-        failure_warnings = [r for r in warning_records if "failed" in r.message.lower() and "cancelled_task" in r.message]
+        failure_warnings = [
+            r
+            for r in warning_records
+            if "failed" in r.message.lower() and "cancelled_task" in r.message
+        ]
         assert len(failure_warnings) == 0
 
 

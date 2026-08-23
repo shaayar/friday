@@ -55,7 +55,12 @@ class SQLiteCompactionStore:
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object | None,
+    ) -> None:
         self.close()
 
     def _initialize_schema(self) -> None:
@@ -208,7 +213,9 @@ class SQLiteCompactionStore:
 
         return compaction
 
-    def _insert_item(self, compaction_id: str, category: str, ordinal: int, item: CompactionItem) -> None:
+    def _insert_item(
+        self, compaction_id: str, category: str, ordinal: int, item: CompactionItem
+    ) -> None:
         self._conn.execute(
             """
             INSERT INTO compaction_items (item_id, compaction_id, category, content, ordinal)
