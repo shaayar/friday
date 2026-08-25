@@ -387,7 +387,99 @@ class TestOrchestrator:
         # This test is a placeholder for future implementation.
         assert True
 
-    # ===== No persistence =====
+
+
+    # ===== Reassignment =====
+
+    @pytest.mark.asyncio
+    async def test_successful_reassignment(self, verifier):
+            """FAIL on worker A, reassign to worker B -> PASS."""
+            # Create fresh registry without hermes
+            registry = AgentRegistry()
+            # Register two workers with same capabilities
+            manifest1 = AgentManifest(
+                agent_id="worker-a",
+                name="Worker A",
+                description="First worker",
+                capabilities=(
+                    TaskCapability.READ,
+                    TaskCapability.WRITE,
+                    TaskCapability.EXECUTE,
+                ),
+                input_contract="TaskContract",
+                output_contract="WorkerResult",
+                execution_protocol="subprocess",
+            )
+            manifest2 = AgentManifest(
+                agent_id="worker-b",
+                name="Worker B",
+                description="Second worker",
+                capabilities=(
+                    TaskCapability.READ,
+                    TaskCapability.WRITE,
+                    TaskCapability.EXECUTE,
+                ),
+                input_contract="TaskContract",
+                output_contract="WorkerResult",
+                execution_protocol="subprocess",
+            )
+
+            # Worker A adapter that fails verification (wrong content)
+            class FailingAdapter:
+                def capabilities(self):
+                    return (TaskCapability.READ, TaskCapability.WRITE, TaskCapability.EXECUTE)
+
+                async def execute(self, task):
+                    return WorkerResult(
+                        task_id=task.task_id,
+                        agent_id="worker-a",
+                        status="completed",
+                        output="Created file with WRONG_CONTENT",
+                        artifacts=("file.txt",),
+                    )
+
+            # Worker B adapter that passes verification
+            class PassingAdapter:
+                def capabilities(self):
+                    return (TaskCapability.READ, TaskCapability.WRITE, TaskCapability.EXECUTE)
+
+                async def execute(self, task):
+                    return WorkerResult(
+                        task_id=task.task_id,
+                        agent_id="worker-b",
+                        status="completed",
+                        output="Created file with REQUIRED_CONTENT_XYZ",
+                        artifacts=("file.txt",),
+                    )
+
+            registry.register(manifest1, FailingAdapter())
+            registry.register(manifest2, PassingAdapter())
+
+            orchestrator = Orchestrator(registry=registry, verifier=verifier)
+
+            # Task requires specific content that only worker-b produces
+            task = TaskContract(
+                task_id="reassign-1",
+                objective="Create file with specific content",
+                acceptance_criteria=("output contains REQUIRED_CONTENT_XYZ",),
+                allowed_capabilities=(
+                    TaskCapability.READ,
+                    TaskCapability.WRITE,
+                    TaskCapability.EXECUTE,
+                ),
+            )
+
+            result = await orchestrator.orchestrate(task)
+
+            # Worker A fails verification, worker B reassigned and passes
+            assert result.status == OrchestrationStatus.PASS
+            assert result.selected_agent_id == "worker-b"
+            assert result.worker_result is not None
+            assert result.worker_result.agent_id == "worker-b"
+            assert result.verification_detail is not None
+            assert result.verification_detail.overall == VerificationResult.PASS
+
+# ===== No persistence =====
 
     @pytest.mark.asyncio
     async def test_no_persistence(self, orchestrator):

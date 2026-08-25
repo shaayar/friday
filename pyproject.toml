@@ -48,6 +48,10 @@ exclude = [
     "fail_task.py",
     "feature_task.py",
     "retry_feature.py",
+    "retry_feature_demo.py",
+    "retry_feature_implementation.py",
+    "retry_notification_service.py",
+    "retry_webhook_sender.py",
     "fix_test-3_*.py",
     "run_orch_task.py",
     "persist_test.py",
@@ -76,8 +80,13 @@ exclude = [
     "required_content.txt",
     "impossible_content.txt",
     "escalate_output.txt",
-    "retry_feature_implementation.py",
     "second_file.py",
+    "api_client_with_retry.py",
+    "resilient_webhook_sender.py",
+    "main.py",
+    "feature.py",
+    "retry_cache_client.py",
+    "retry_demo_feature.py",
 ]
 
 [tool.ruff.lint]

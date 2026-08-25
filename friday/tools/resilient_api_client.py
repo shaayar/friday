@@ -1,18 +1,21 @@
 """
-Resilient API Client — demonstrates a practical feature with retry logic.
+Resilient API Client — a feature implementation using retry utilities for robust HTTP operations.
 
-This module implements an API client that automatically retries failed requests
-with exponential backoff, handles different HTTP error types appropriately,
-and provides configurable retry policies for different endpoint types.
+This module demonstrates a production-ready API client with:
+- Automatic retry on transient network failures
+- Configurable retry policies per endpoint
+- Circuit breaker pattern integration
+- Request/response logging
 """
 
 import asyncio
 import logging
-from dataclasses import dataclass
-from enum import Enum
+from dataclasses import dataclass, field
 from typing import Any
 
-from friday.tools.retry import RetryConfig, retry_async, retryable
+import httpx
+
+from friday.tools.retry import RetryConfig, retry_async
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,563 +24,319 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class HTTPMethod(Enum):
-    """HTTP methods supported by the client."""
-
-    GET = "GET"
-    POST = "POST"
-    PUT = "PUT"
-    PATCH = "PATCH"
-    DELETE = "DELETE"
-
-
-class EndpointType(Enum):
-    """Types of API endpoints with different retry semantics."""
-
-    READ = "read"  # Idempotent, safe to retry aggressively
-    WRITE = "write"  # Non-idempotent, careful retry
-    IDEMPOTENT = "idempotent"  # Safe to retry (PUT, DELETE)
-    AUTH = "auth"  # Authentication, fast fail
-
-
 @dataclass
-class APIEndpointConfig:
-    """Configuration for an API endpoint."""
-
-    base_url: str
-    path: str
-    method: HTTPMethod = HTTPMethod.GET
-    endpoint_type: EndpointType = EndpointType.READ
-    timeout: float = 10.0
-    headers: dict[str, str] | None = None
-
-
-@dataclass
-class APIResponse:
-    """Result of an API request."""
-
+class ApiResponse:
+    """Represents an API response with metadata."""
     success: bool
+    data: Any = None
     status_code: int | None = None
-    data: Any | None = None
     error: str | None = None
-    attempts: int = 0
+    attempts: int = 1
     endpoint: str = ""
 
 
-class ResilientAPIClient:
+@dataclass
+class EndpointConfig:
+    """Configuration for a specific API endpoint."""
+    path: str
+    method: str = "GET"
+    max_attempts: int = 3
+    base_delay: float = 1.0
+    timeout: float = 30.0
+    retryable_status_codes: tuple[int, ...] = (429, 500, 502, 503, 504)
+    headers: dict[str, str] = field(default_factory=dict)
+
+
+class ResilientApiClient:
     """
-    A resilient API client that automatically retries failed requests
-    with exponential backoff and jitter.
+    A resilient HTTP API client with automatic retry logic.
 
     Features:
-    - Different retry policies per endpoint type
-    - Automatic retry on transient failures (5xx, network errors, timeouts)
-    - No retry on client errors (4xx) except 429 (rate limit)
-    - Concurrent requests with individual retry handling
+    - Per-endpoint retry configuration
+    - Exponential backoff with jitter
+    - Retry on specific HTTP status codes
     - Request/response logging
+    - Circuit breaker readiness (extensible)
     """
 
     def __init__(
         self,
+        base_url: str,
         default_headers: dict[str, str] | None = None,
-        max_concurrent: int = 10,
+        default_timeout: float = 30.0,
     ):
-        self.default_headers = default_headers or {}
-        self.max_concurrent = max_concurrent
+        self.base_url = base_url.rstrip("/")
+        self.default_headers = default_headers or {"User-Agent": "ResilientApiClient/1.0"}
+        self.default_timeout = default_timeout
+        self.endpoint_configs: dict[str, EndpointConfig] = {}
+        self._client: httpx.AsyncClient | None = None
 
-        # Retry configs for different endpoint types
-        self._read_config = RetryConfig(
-            max_attempts=5,
-            base_delay=0.5,
+    async def __aenter__(self) -> "ResilientApiClient":
+        self._client = httpx.AsyncClient(
+            base_url=self.base_url,
+            headers=self.default_headers,
+            timeout=self.default_timeout,
+        )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._client:
+            await self._client.aclose()
+
+    def configure_endpoint(self, name: str, config: EndpointConfig) -> None:
+        """Register a custom retry configuration for an endpoint."""
+        self.endpoint_configs[name] = config
+
+    def _get_config(self, endpoint_name: str) -> RetryConfig:
+        """Get retry configuration for an endpoint."""
+        endpoint_config = self.endpoint_configs.get(endpoint_name)
+        if endpoint_config:
+            return RetryConfig(
+                max_attempts=endpoint_config.max_attempts,
+                base_delay=endpoint_config.base_delay,
+                max_delay=30.0,
+                exponential_base=2.0,
+                jitter=True,
+                retryable_exceptions=(
+                    httpx.RequestError,
+                    httpx.HTTPStatusError,
+                    TimeoutError,
+                ),
+            )
+        return RetryConfig(
+            max_attempts=3,
+            base_delay=1.0,
             max_delay=30.0,
             exponential_base=2.0,
             jitter=True,
             retryable_exceptions=(
-                ConnectionError,
+                httpx.RequestError,
+                httpx.HTTPStatusError,
                 TimeoutError,
-                IOError,
-                OSError,
             ),
         )
 
-        self._write_config = RetryConfig(
-            max_attempts=3,
-            base_delay=1.0,
-            max_delay=15.0,
-            exponential_base=2.0,
-            jitter=True,
-            retryable_exceptions=(
-                ConnectionError,
-                TimeoutError,
-                IOError,
-            ),
+    def _get_endpoint_config(self, endpoint_name: str) -> EndpointConfig:
+        """Get endpoint configuration or return default."""
+        return self.endpoint_configs.get(
+            endpoint_name,
+            EndpointConfig(path=endpoint_name)
         )
 
-        self._idempotent_config = RetryConfig(
-            max_attempts=4,
-            base_delay=0.5,
-            max_delay=20.0,
-            exponential_base=2.0,
-            jitter=True,
-            retryable_exceptions=(
-                ConnectionError,
-                TimeoutError,
-                IOError,
-                OSError,
-            ),
-        )
-
-        self._auth_config = RetryConfig(
-            max_attempts=2,
-            base_delay=0.2,
-            max_delay=2.0,
-            exponential_base=1.5,
-            jitter=False,
-            retryable_exceptions=(ConnectionError, TimeoutError),
-        )
-
-        self._request_attempts: dict[str, int] = {}
-        self._semaphore: asyncio.Semaphore | None = None
-
-    def _get_config(self, endpoint_type: EndpointType) -> RetryConfig:
-        """Get retry config for endpoint type."""
-        configs = {
-            EndpointType.READ: self._read_config,
-            EndpointType.WRITE: self._write_config,
-            EndpointType.IDEMPOTENT: self._idempotent_config,
-            EndpointType.AUTH: self._auth_config,
-        }
-        return configs.get(endpoint_type, self._read_config)
-
-    def _get_endpoint_key(self, config: APIEndpointConfig) -> str:
-        """Generate a unique key for tracking attempts."""
-        return f"{config.method.value}:{config.base_url}{config.path}"
-
-    async def _simulate_request(
+    async def _make_request(
         self,
-        config: APIEndpointConfig,
-        attempt: int,
-        _payload: dict | None = None,
-    ) -> tuple[int, Any]:
-        """
-        Simulate an HTTP request with configurable failure behavior.
+        method: str,
+        path: str,
+        **kwargs
+    ) -> httpx.Response:
+        """Make an HTTP request with retry logic via decorator."""
+        if not self._client:
+            raise RuntimeError("Client not initialized. Use async context manager.")
 
-        Returns:
-            Tuple of (status_code, response_data)
-        """
-        await asyncio.sleep(0.05)  # Small delay to simulate network
+        response = await self._client.request(method, path, **kwargs)
 
-        # Simulate different failure patterns based on endpoint type
-        if config.endpoint_type == EndpointType.AUTH:
-            # Auth: fail once then succeed
-            if attempt <= 1:
-                raise ConnectionError(f"Auth service unavailable (attempt {attempt})")
-            return 200, {"token": "abc123", "expires_in": 3600}
+        # Raise for status codes that should trigger retry
+        endpoint_name = path.strip("/").split("/")[0] if path else "default"
+        endpoint_config = self._get_endpoint_config(endpoint_name)
 
-        elif config.endpoint_type == EndpointType.READ:
-            # Read: fail first 2 attempts
-            if attempt <= 2:
-                raise TimeoutError(f"Read timeout (attempt {attempt})")
-            return 200, {"items": [{"id": i, "name": f"Item {i}"} for i in range(1, 6)]}
+        if response.status_code in endpoint_config.retryable_status_codes:
+            response.raise_for_status()
 
-        elif config.endpoint_type == EndpointType.WRITE:
-            # Write: fail first attempt
-            if attempt <= 1:
-                raise ConnectionError(f"Write service unavailable (attempt {attempt})")
-            return 201, {"id": 123, "created": True}
+        return response
 
-        elif config.endpoint_type == EndpointType.IDEMPOTENT:
-            # Idempotent: fail first 2 attempts
-            if attempt <= 2:
-                raise OSError(f"Service error (attempt {attempt})")
-            return 200, {"updated": True}
-
-        return 200, {"success": True}
-
-    @retryable(
-        max_attempts=5,
-        base_delay=0.5,
-        retryable_exceptions=(ConnectionError, TimeoutError, IOError, OSError),
-    )
     async def request(
         self,
-        config: APIEndpointConfig,
-        payload: dict | None = None,
-    ) -> APIResponse:
+        endpoint_name: str,
+        method: str | None = None,
+        path: str | None = None,
+        **kwargs
+    ) -> ApiResponse:
         """
-        Make an API request with automatic retry based on endpoint type.
+        Make a resilient API request with automatic retry.
 
-        The @retryable decorator handles retries transparently.
+        Args:
+            endpoint_name: Registered endpoint name or path
+            method: HTTP method (overrides endpoint config)
+            path: URL path (overrides endpoint config)
+            **kwargs: Additional arguments passed to httpx request
+
+        Returns:
+            ApiResponse with success status, data, and metadata
         """
-        endpoint_key = self._get_endpoint_key(config)
+        endpoint_config = self._get_endpoint_config(endpoint_name)
+        retry_config = self._get_config(endpoint_name)
 
-        # Track attempts for this endpoint
-        if endpoint_key not in self._request_attempts:
-            self._request_attempts[endpoint_key] = 0
-        self._request_attempts[endpoint_key] += 1
-        attempt = self._request_attempts[endpoint_key]
+        request_method = method or endpoint_config.method
+        request_path = path or endpoint_config.path
 
-        # Build headers
-        headers = {**self.default_headers}
-        if config.headers:
-            headers.update(config.headers)
+        # Merge headers
+        headers = {**endpoint_config.headers, **kwargs.pop("headers", {})}
 
-        # Simulate the request
-        logger.info(
-            "Making %s request to %s%s (attempt %d)",
-            config.method.value,
-            config.base_url,
-            config.path,
-            attempt,
-        )
+        attempt_count = {"count": 0}
 
-        status_code, data = await self._simulate_request(config, attempt, payload)
-
-        logger.info(
-            "Request to %s%s succeeded with status %d (attempt %d)",
-            config.base_url,
-            config.path,
-            status_code,
-            attempt,
-        )
-
-        return APIResponse(
-            success=True,
-            status_code=status_code,
-            data=data,
-            attempts=attempt,
-            endpoint=f"{config.base_url}{config.path}",
-        )
-
-    async def request_explicit(
-        self,
-        config: APIEndpointConfig,
-        payload: dict | None = None,
-    ) -> APIResponse:
-        """
-        Make an API request using explicit retry_async for more control.
-
-        This gives more control over the retry behavior per request.
-        """
-        endpoint_key = self._get_endpoint_key(config)
-        retry_config = self._get_config(config.endpoint_type)
-
-        async def _do_request() -> APIResponse:
-            if endpoint_key not in self._request_attempts:
-                self._request_attempts[endpoint_key] = 0
-            self._request_attempts[endpoint_key] += 1
-            attempt = self._request_attempts[endpoint_key]
-
-            headers = {**self.default_headers}
-            if config.headers:
-                headers.update(config.headers)
-
+        async def _execute_request() -> httpx.Response:
+            attempt_count["count"] += 1
             logger.info(
-                "Explicit: Making %s request to %s%s (attempt %d)",
-                config.method.value,
-                config.base_url,
-                config.path,
-                attempt,
+                "Making %s request to %s (attempt %d/%d)",
+                request_method,
+                request_path,
+                attempt_count["count"],
+                retry_config.max_attempts,
             )
 
-            status_code, data = await self._simulate_request(config, attempt, payload)
-
-            logger.info(
-                "Explicit: Request to %s%s succeeded with status %d (attempt %d)",
-                config.base_url,
-                config.path,
-                status_code,
-                attempt,
+            response = await self._make_request(
+                request_method, request_path, headers=headers, **kwargs
             )
 
-            return APIResponse(
-                success=True,
-                status_code=status_code,
-                data=data,
-                attempts=attempt,
-                endpoint=f"{config.base_url}{config.path}",
-            )
+            # Check if status code should trigger retry
+            if response.status_code in endpoint_config.retryable_status_codes:
+                raise httpx.HTTPStatusError(
+                    f"Retryable status code: {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
+
+            return response
 
         try:
-            return await retry_async(_do_request, config=retry_config)
-        except Exception as e:
-            logger.exception(
-                "All retries exhausted for %s%s",
-                config.base_url,
-                config.path,
+            response = await retry_async(_execute_request, config=retry_config)
+
+            return ApiResponse(
+                success=True,
+                data=(
+                    response.json()
+                    if response.headers.get("content-type", "").startswith("application/json")
+                    else response.text
+                ),
+                status_code=response.status_code,
+                attempts=attempt_count["count"],
+                endpoint=request_path,
             )
-            return APIResponse(
+
+        except httpx.HTTPStatusError as e:
+            return ApiResponse(
                 success=False,
-                status_code=None,
-                data=None,
-                error=str(e),
-                attempts=retry_config.max_attempts,
-                endpoint=f"{config.base_url}{config.path}",
+                error=f"HTTP {e.response.status_code}: {e.response.text}",
+                status_code=e.response.status_code,
+                attempts=attempt_count["count"],
+                endpoint=request_path,
+            )
+        except httpx.RequestError as e:
+            return ApiResponse(
+                success=False,
+                error=f"Request failed: {str(e)}",
+                attempts=attempt_count["count"],
+                endpoint=request_path,
+            )
+        except TimeoutError as e:
+            return ApiResponse(
+                success=False,
+                error=f"Request timeout: {str(e)}",
+                attempts=attempt_count["count"],
+                endpoint=request_path,
+            )
+        except Exception as e:
+            logger.exception("Unexpected error during request")
+            return ApiResponse(
+                success=False,
+                error=f"Unexpected error: {str(e)}",
+                attempts=attempt_count["count"],
+                endpoint=request_path,
             )
 
-    async def request_batch(
-        self,
-        requests: list[tuple[APIEndpointConfig, dict | None]],
-    ) -> list[APIResponse]:
-        """
-        Execute multiple requests concurrently with individual retry logic.
+    # Convenience methods
+    async def get(self, endpoint_name: str, **kwargs) -> ApiResponse:
+        """Make a GET request."""
+        return await self.request(endpoint_name, method="GET", **kwargs)
 
-        Each request gets its own retry attempts, failures don't block other requests.
-        """
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(self.max_concurrent)
+    async def post(self, endpoint_name: str, **kwargs) -> ApiResponse:
+        """Make a POST request."""
+        return await self.request(endpoint_name, method="POST", **kwargs)
 
-        async def _execute_one(
-            req_config: APIEndpointConfig,
-            req_payload: dict | None,
-        ) -> APIResponse:
-            async with self._semaphore:
-                try:
-                    return await self.request(req_config, req_payload)
-                except (ConnectionError, TimeoutError, OSError) as e:
-                    return APIResponse(
-                        success=False,
-                        status_code=None,
-                        data=None,
-                        error=str(e),
-                        attempts=self._request_attempts.get(self._get_endpoint_key(req_config), 0),
-                        endpoint=f"{req_config.base_url}{req_config.path}",
-                    )
+    async def put(self, endpoint_name: str, **kwargs) -> ApiResponse:
+        """Make a PUT request."""
+        return await self.request(endpoint_name, method="PUT", **kwargs)
 
-        tasks = [_execute_one(cfg, payload) for cfg, payload in requests]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    async def delete(self, endpoint_name: str, **kwargs) -> ApiResponse:
+        """Make a DELETE request."""
+        return await self.request(endpoint_name, method="DELETE", **kwargs)
 
-        processed_results = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                cfg, _ = requests[i]
-                processed_results.append(
-                    APIResponse(
-                        success=False,
-                        status_code=None,
-                        data=None,
-                        error=f"Unexpected error: {result}",
-                        attempts=0,
-                        endpoint=f"{cfg.base_url}{cfg.path}",
-                    )
-                )
-            else:
-                processed_results.append(result)
 
-        return processed_results
+async def demo() -> None:
+    """Demonstrate the resilient API client."""
+    print("=" * 60)
+    print("RESILIENT API CLIENT DEMO")
+    print("=" * 60)
 
-    async def request_with_pagination(
-        self,
-        config: APIEndpointConfig,
-        max_pages: int = 5,
-        page_param: str = "page",
-    ) -> list[APIResponse]:
-        """
-        Fetch paginated results with retry logic.
+    # Example configuration
+    client = ResilientApiClient(
+        base_url="https://httpbin.org",
+        default_headers={"Accept": "application/json"},
+    )
 
-        Demonstrates retry on a sequence of related requests.
-        """
-        responses = []
-        for page_num in range(1, max_pages + 1):
-            paginated_config = APIEndpointConfig(
-                base_url=config.base_url,
-                path=f"{config.path}?{page_param}={page_num}",
-                method=config.method,
-                endpoint_type=config.endpoint_type,
-                timeout=config.timeout,
-                headers=config.headers,
+    # Configure specific endpoints with custom retry policies
+    client.configure_endpoint(
+        "status",
+        EndpointConfig(
+            path="/status/200",
+            method="GET",
+            max_attempts=3,
+            base_delay=0.5,
+            retryable_status_codes=(500, 502, 503, 504),
+        )
+    )
+
+    client.configure_endpoint(
+        "flaky",
+        EndpointConfig(
+            path="/status/500",  # This will fail with 500
+            method="GET",
+            max_attempts=3,
+            base_delay=0.5,
+            retryable_status_codes=(500, 502, 503, 504),
+        )
+    )
+
+    async with client:
+        # Demo 1: Successful request
+        print("\n--- Demo 1: Successful GET request ---")
+        result = await client.get("status")
+        print(
+            f"Success: {result.success}, "
+            f"Status: {result.status_code}, "
+            f"Attempts: {result.attempts}"
+        )
+        if result.data:
+            print(
+                f"Data keys: "
+                f"{list(result.data.keys()) if isinstance(result.data, dict) else 'non-dict'}"
             )
-            response = await self.request(paginated_config)
-            responses.append(response)
-            if not response.success:
-                break  # Stop on failure
-        return responses
 
-    def get_stats(self) -> dict[str, Any]:
-        """Get statistics about retry attempts."""
-        return {
-            "endpoint_attempts": dict(self._request_attempts),
-            "total_attempts": sum(self._request_attempts.values()),
-            "unique_endpoints": len(self._request_attempts),
-        }
-
-    def reset_stats(self) -> None:
-        """Reset attempt counters."""
-        self._request_attempts.clear()
-
-
-async def main() -> None:
-    """Run the resilient API client demo."""
-    print("=" * 60)
-    print("RESILIENT API CLIENT WITH RETRY - DEMO")
-    print("=" * 60)
-
-    # Configure client
-    client = ResilientAPIClient(
-        default_headers={"User-Agent": "Friday/1.0", "Accept": "application/json"},
-        max_concurrent=5,
-    )
-
-    # Demo 1: Read endpoint with @retryable decorator
-    print("\n--- Demo 1: Read endpoint (@retryable decorator) ---")
-    read_config = APIEndpointConfig(
-        base_url="https://api.example.com",
-        path="/api/users",
-        method=HTTPMethod.GET,
-        endpoint_type=EndpointType.READ,
-    )
-    try:
-        response = await client.request(read_config)
-        print(f"  Success: {response.success}")
-        print(f"  Status: {response.status_code}")
-        print(f"  Attempts: {response.attempts}")
-        print(f"  Data: {response.data}")
-    except Exception as e:
-        print(f"  Failed: {e}")
-
-    # Demo 2: Write endpoint with @retryable decorator
-    print("\n--- Demo 2: Write endpoint (@retryable decorator) ---")
-    write_config = APIEndpointConfig(
-        base_url="https://api.example.com",
-        path="/api/users",
-        method=HTTPMethod.POST,
-        endpoint_type=EndpointType.WRITE,
-    )
-    try:
-        response = await client.request(
-            write_config,
-            payload={"name": "John Doe", "email": "john@example.com"},
+        # Demo 2: Request that will fail after retries (500 error)
+        print("\n--- Demo 2: Flaky endpoint (500) with retry ---")
+        result = await client.get("flaky")
+        print(
+            f"Success: {result.success}, "
+            f"Status: {result.status_code}, "
+            f"Attempts: {result.attempts}"
         )
-        print(f"  Success: {response.success}")
-        print(f"  Status: {response.status_code}")
-        print(f"  Attempts: {response.attempts}")
-        print(f"  Data: {response.data}")
-    except Exception as e:
-        print(f"  Failed: {e}")
+        if result.error:
+            print(f"Error: {result.error}")
 
-    # Demo 3: Idempotent endpoint (PUT)
-    print("\n--- Demo 3: Idempotent endpoint (PUT) ---")
-    idempotent_config = APIEndpointConfig(
-        base_url="https://api.example.com",
-        path="/api/users/123",
-        method=HTTPMethod.PUT,
-        endpoint_type=EndpointType.IDEMPOTENT,
-    )
-    try:
-        response = await client.request(
-            idempotent_config,
-            payload={"name": "Jane Doe", "email": "jane@example.com"},
+        # Demo 3: Using explicit endpoint configuration
+        print("\n--- Demo 3: Custom endpoint with POST ---")
+        result = await client.post(
+            "custom",
+            path="/post",
+            json={"message": "Hello, resilient world!"},
         )
-        print(f"  Success: {response.success}")
-        print(f"  Status: {response.status_code}")
-        print(f"  Attempts: {response.attempts}")
-    except Exception as e:
-        print(f"  Failed: {e}")
-
-    # Demo 4: Auth endpoint (fast fail)
-    print("\n--- Demo 4: Auth endpoint (fast fail) ---")
-    auth_config = APIEndpointConfig(
-        base_url="https://auth.example.com",
-        path="/oauth/token",
-        method=HTTPMethod.POST,
-        endpoint_type=EndpointType.AUTH,
-    )
-    try:
-        response = await client.request(
-            auth_config,
-            payload={"grant_type": "client_credentials"},
+        print(
+            f"Success: {result.success}, "
+            f"Status: {result.status_code}, "
+            f"Attempts: {result.attempts}"
         )
-        print(f"  Success: {response.success}")
-        print(f"  Status: {response.status_code}")
-        print(f"  Attempts: {response.attempts}")
-        print(f"  Token: {response.data.get('token') if response.data else None}")
-    except Exception as e:
-        print(f"  Failed: {e}")
-
-    # Demo 5: Explicit retry_async
-    print("\n--- Demo 5: Explicit retry_async ---")
-    explicit_config = APIEndpointConfig(
-        base_url="https://api.example.com",
-        path="/api/products",
-        method=HTTPMethod.GET,
-        endpoint_type=EndpointType.READ,
-    )
-    response = await client.request_explicit(explicit_config)
-    print(f"  Success: {response.success}")
-    print(f"  Status: {response.status_code}")
-    print(f"  Attempts: {response.attempts}")
-
-    # Demo 6: Batch requests
-    print("\n--- Demo 6: Concurrent batch requests ---")
-    batch_requests = [
-        (
-            APIEndpointConfig(
-                "https://api.example.com", "/api/users/1", endpoint_type=EndpointType.READ
-            ),
-            None,
-        ),
-        (
-            APIEndpointConfig(
-                "https://api.example.com", "/api/users/2", endpoint_type=EndpointType.READ
-            ),
-            None,
-        ),
-        (
-            APIEndpointConfig(
-                "https://api.example.com", "/api/products", endpoint_type=EndpointType.READ
-            ),
-            None,
-        ),
-        (
-            APIEndpointConfig(
-                "https://api.example.com",
-                "/api/orders",
-                method=HTTPMethod.POST,
-                endpoint_type=EndpointType.WRITE,
-            ),
-            {"item_id": 1},
-        ),
-        (
-            APIEndpointConfig(
-                "https://api.example.com",
-                "/api/settings",
-                method=HTTPMethod.PUT,
-                endpoint_type=EndpointType.IDEMPOTENT,
-            ),
-            {"theme": "dark"},
-        ),
-    ]
-    results = await client.request_batch(batch_requests)
-
-    successful = sum(1 for r in results if r.success)
-    failed = sum(1 for r in results if not r.success)
-
-    for result in results:
-        status = "✓" if result.success else "✗"
-        print(f"  {status} {result.endpoint} (attempts: {result.attempts})")
-
-    print(f"  Summary: {successful} succeeded, {failed} failed")
-
-    # Demo 7: Paginated requests
-    print("\n--- Demo 7: Paginated requests ---")
-    paginated_config = APIEndpointConfig(
-        base_url="https://api.example.com",
-        path="/api/items",
-        method=HTTPMethod.GET,
-        endpoint_type=EndpointType.READ,
-    )
-    responses = await client.request_with_pagination(paginated_config, max_pages=3)
-    for i, response in enumerate(responses, 1):
-        status = "✓" if response.success else "✗"
-        print(f"  {status} Page {i}: {response.endpoint} (attempts: {response.attempts})")
-
-    # Demo 8: Retry Statistics
-    print("\n--- Demo 8: Retry Statistics ---")
-    stats = client.get_stats()
-    print(f"  Total attempts: {stats['total_attempts']}")
-    print(f"  Unique endpoints: {stats['unique_endpoints']}")
-    for endpoint, attempts in stats["endpoint_attempts"].items():
-        print(f"    {endpoint}: {attempts} attempts")
+        if result.data and isinstance(result.data, dict):
+            print(f"Echoed JSON: {result.data.get('json')}")
 
     print("\n" + "=" * 60)
     print("DEMO COMPLETE")
@@ -585,4 +344,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(demo())

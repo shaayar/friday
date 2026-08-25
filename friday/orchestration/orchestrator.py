@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from friday.orchestration.models import (
+    AgentManifest,
     OrchestrationConfig,
     OrchestrationResult,
     OrchestrationStatus,
@@ -43,6 +44,7 @@ class Orchestrator:
     """
 
     MAX_RETRIES = 1
+    MAX_REASSIGNMENTS = 1
 
     def __init__(
         self,
@@ -103,6 +105,30 @@ class Orchestrator:
                 completed_at=datetime.now(UTC),
                 notes=f"No worker registered for required capabilities: {required_capabilities}",
             )
+
+        # Check selected worker is available
+        if not selected_agent.is_available:
+            logger.warning(
+                "Selected worker %s is unavailable, searching for alternative",
+                selected_agent.agent_id,
+            )
+            # Try to find an available worker with the required capabilities
+            available_agent = self._find_available_worker(
+                required_capabilities, {selected_agent.agent_id}
+            )
+            if available_agent is None:
+                return OrchestrationResult(
+                    task_id=task.task_id,
+                    objective=task.objective,
+                    selected_agent_id=None,
+                    worker_result=None,
+                    verification_detail=None,
+                    status=OrchestrationStatus.NO_WORKER,
+                    started_at=started_at,
+                    completed_at=datetime.now(UTC),
+                    notes="All workers with required capabilities are unavailable",
+                )
+            selected_agent = available_agent
 
         # Check for unknown capabilities
         missing_caps = set(required_capabilities) - set(selected_agent.capabilities)
@@ -283,24 +309,7 @@ class Orchestrator:
 
             # FAIL - check if we can retry
             if verification_overall == "fail":
-                if retries >= self.MAX_RETRIES:
-                    # No more retries - ESCALATE
-                    completed_at = datetime.now(UTC)
-                    return OrchestrationResult(
-                        task_id=task.task_id,
-                        objective=task.objective,
-                        selected_agent_id=selected_agent.agent_id,
-                        worker_result=worker_result,
-                        verification_detail=verification_detail,
-                        status=OrchestrationStatus.ESCALATED,
-                        started_at=started_at,
-                        completed_at=completed_at,
-                        notes=(
-                            f"Escalated after {retries + 1} attempt(s) "
-                            f"with FAIL: {verification_detail.notes}"
-                        ),
-                    )
-                else:
+                if retries < self.MAX_RETRIES:
                     # Retry - same worker, increment counter
                     retries += 1
                     logger.info(
@@ -315,6 +324,14 @@ class Orchestrator:
                     # Continue loop for retry
                     continue
 
+                # Retries exhausted - try reassignment to alternative worker
+                return await self._try_reassignment(
+                    task=task,
+                    required_capabilities=task.allowed_capabilities,
+                    failed_workers={selected_agent.agent_id},
+                    started_at=started_at,
+                )
+
             # Fallback - should not reach here
             completed_at = datetime.now(UTC)
             return OrchestrationResult(
@@ -328,6 +345,189 @@ class Orchestrator:
                 completed_at=completed_at,
                 notes=f"Unexpected verification result: {verification_overall.value}",
             )
+
+    async def _try_reassignment(
+        self,
+        task: TaskContract,
+        required_capabilities: tuple,
+        failed_workers: set[str],
+        started_at: datetime,
+    ) -> OrchestrationResult:
+        """
+        Attempt to reassign task to an alternative capable worker.
+
+        Returns OrchestrationResult from the reassignment attempt.
+        """
+        logger.info(
+            "Attempting reassignment for task %s, excluding failed workers: %s",
+            task.task_id,
+            failed_workers,
+        )
+
+        # Select alternative worker excluding failed ones
+        required = set(required_capabilities)
+        eligible = [
+            manifest
+            for manifest in self._registry._agents.values()
+            if manifest.agent_id not in failed_workers
+            and required.issubset(set(manifest.capabilities))
+        ]
+
+        if not eligible:
+            logger.warning(
+                "No alternative worker available for task %s after excluding failed: %s",
+                task.task_id,
+                failed_workers,
+            )
+            completed_at = datetime.now(UTC)
+            return OrchestrationResult(
+                task_id=task.task_id,
+                objective=task.objective,
+                selected_agent_id=None,
+                worker_result=None,
+                verification_detail=None,
+                status=OrchestrationStatus.ESCALATED,
+                started_at=started_at,
+                completed_at=completed_at,
+                notes=(
+                    f"All capable workers exhausted ({len(failed_workers)} failed); "
+                    f"no alternative worker available for reassignment"
+                ),
+            )
+
+        # Deterministic: fewest capabilities, then lexicographic agent_id
+        eligible.sort(key=lambda m: (len(m.capabilities), m.agent_id))
+        selected_agent = eligible[0]
+        adapter = self._registry.get_adapter(selected_agent.agent_id)
+
+        logger.info(
+            "Reassigned task %s from failed workers %s to alternative worker %s",
+            task.task_id,
+            failed_workers,
+            selected_agent.agent_id,
+        )
+
+        # Execute with alternative worker
+        worker_result = await adapter.execute(task)
+        logger.info(
+            "Worker %s completed task %s with status: %s",
+            selected_agent.agent_id,
+            task.task_id,
+            worker_result.status,
+        )
+
+        # Verify the result
+        artifacts = {}
+        if hasattr(adapter, "get_staged_changes"):
+            artifacts = adapter.get_staged_changes()
+        if hasattr(worker_result, "artifacts") and worker_result.artifacts:
+            for artifact in worker_result.artifacts:
+                if artifact not in artifacts:
+                    artifacts[artifact] = ""
+
+        try:
+            verification_detail = self._verifier.verify(
+                task=task,
+                result=worker_result,
+                artifacts=artifacts,
+            )
+        except Exception as exc:
+            logger.exception("Verifier failed for task %s during reassignment", task.task_id)
+            completed_at = datetime.now(UTC)
+            return OrchestrationResult(
+                task_id=task.task_id,
+                objective=task.objective,
+                selected_agent_id=selected_agent.agent_id,
+                worker_result=worker_result,
+                verification_detail=None,
+                status=OrchestrationStatus.VERIFIER_FAILURE,
+                started_at=started_at,
+                completed_at=completed_at,
+                notes=f"Verifier raised exception during reassignment: {exc}",
+            )
+
+        # Determine status from verification
+        verification_overall = verification_detail.overall
+
+        # PASS -> ACCEPT immediately
+        if verification_overall == "pass":
+            completed_at = datetime.now(UTC)
+            notes = f"Verification: {verification_overall.value} (reassignment attempt 1)"
+            return OrchestrationResult(
+                task_id=task.task_id,
+                objective=task.objective,
+                selected_agent_id=selected_agent.agent_id,
+                worker_result=worker_result,
+                verification_detail=verification_detail,
+                status=OrchestrationStatus.PASS,
+                started_at=started_at,
+                completed_at=datetime.now(UTC),
+                notes=notes,
+            )
+
+        # NEEDS_REVIEW -> ESCALATE immediately (no retry)
+        if verification_overall == "needs_review":
+            completed_at = datetime.now(UTC)
+            return OrchestrationResult(
+                task_id=task.task_id,
+                objective=task.objective,
+                selected_agent_id=selected_agent.agent_id,
+                worker_result=worker_result,
+                verification_detail=verification_detail,
+                status=OrchestrationStatus.ESCALATED,
+                started_at=started_at,
+                completed_at=completed_at,
+                notes=(
+                    f"Escalated after verification NEEDS_REVIEW "
+                    f"(reassignment attempt 1): {verification_detail.notes}"
+                ),
+            )
+
+        # FAIL -> ESCALATE (no more attempts)
+        completed_at = datetime.now(UTC)
+        return OrchestrationResult(
+            task_id=task.task_id,
+            objective=task.objective,
+            selected_agent_id=selected_agent.agent_id,
+            worker_result=worker_result,
+            verification_detail=verification_detail,
+            status=OrchestrationStatus.ESCALATED,
+            started_at=started_at,
+            completed_at=completed_at,
+            notes=(
+                f"Escalated after reassignment FAIL: {verification_detail.notes}"
+            ),
+        )
+
+    def _find_available_worker(
+        self,
+        required_capabilities: tuple,
+        excluded_workers: set[str],
+    ) -> AgentManifest | None:
+        """
+        Find an available worker with the required capabilities.
+
+        Excludes workers in the excluded_workers set.
+        Returns None if no available worker found.
+        """
+        required = set(required_capabilities)
+        all_agents = self._registry.list_agents()
+
+        # Select eligible agents that are available and have required capabilities
+        eligible = [
+            manifest
+            for manifest in all_agents
+            if manifest.agent_id not in excluded_workers
+            and manifest.is_available
+            and required.issubset(set(manifest.capabilities))
+        ]
+
+        if not eligible:
+            return None
+
+        # Deterministic: fewest capabilities, then lexicographic agent_id
+        eligible.sort(key=lambda m: (len(m.capabilities), m.agent_id))
+        return eligible[0]
 
     def _map_verification_status(
         self, verification_result: VerificationResult

@@ -148,6 +148,7 @@ class AgentManifest:
     input_contract: str
     output_contract: str
     execution_protocol: str
+    is_available: bool = True
     created_at: datetime = field(default_factory=_utc_now)
 
     def __post_init__(self) -> None:
@@ -195,6 +196,9 @@ class AgentManifest:
         if not execution_protocol:
             raise ValueError("execution_protocol cannot be empty")
         object.__setattr__(self, "execution_protocol", execution_protocol)
+
+        # is_available
+        object.__setattr__(self, "is_available", True)
 
         # created_at
         created_at = _require_aware_timestamp("created_at", self.created_at)
